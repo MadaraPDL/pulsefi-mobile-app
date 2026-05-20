@@ -61,3 +61,17 @@ export type MyUsageSummary = {
   user_id: string;
   totals: MyUsageTotals;
 };
+
+export type MyUsageRecord = {
+  id: string;
+  user_subscription_id: string;
+  router_id: string;
+  device_id: string | null;
+  upload_mb: DecimalLike;
+  download_mb: DecimalLike;
+  total_mb: DecimalLike;
+  record_start: string;
+  record_end: string;
+  source: string | null;
+  created_at: string;
+};
