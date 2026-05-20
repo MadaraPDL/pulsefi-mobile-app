@@ -12,6 +12,7 @@ import type {
   MyRouter,
   MyRouterCapabilities,
   MySubscription,
+  MySubscriptionPlanSummary,
   MyUsageRecord,
   MyUsageSummary,
 } from "../types/appUser";
@@ -22,6 +23,10 @@ export function getMySummary() {
 
 export function getMySubscriptions() {
   return apiRequest<MySubscription[]>("/me/subscriptions");
+}
+
+export function getMyAvailablePlans() {
+  return apiRequest<MySubscriptionPlanSummary[]>("/me/plans");
 }
 
 export function getMySubscription(subscriptionId: string) {
@@ -109,6 +114,18 @@ export function getMyPlanChangeRequests(limit = 20) {
 
 export function getMyPlanChangeRequest(requestId: string) {
   return apiRequest<MyPlanChangeRequest>(`/me/plan-change-requests/${requestId}`);
+}
+
+export function createMyPlanChangeRequest(data: {
+  user_subscription_id: string;
+  requested_plan_id: string;
+  request_type: "upgrade" | "downgrade";
+  reason?: string | null;
+}) {
+  return apiRequest<MyPlanChangeRequest>("/me/plan-change-requests", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 export function createPlanChangeRequestFromRecommendation(

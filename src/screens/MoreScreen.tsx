@@ -9,13 +9,19 @@ import {
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { InsightsScreen } from "./InsightsScreen";
+import { ManualPlanChangeRequestScreen } from "./ManualPlanChangeRequestScreen";
 import { ProfileScreen } from "./ProfileScreen";
 import { RoutersScreen } from "./RoutersScreen";
 import { SubscriptionsScreen } from "./SubscriptionsScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
 
-type MoreSection = "plans" | "routers" | "insights" | "profile";
+type MoreSection =
+  | "plans"
+  | "routers"
+  | "planRequest"
+  | "insights"
+  | "profile";
 
 type MoreScreenProps = {
   session: AppUserSession;
@@ -39,6 +45,12 @@ const sections: Array<{
     title: "Routers",
     subtitle: "Router modes and capabilities",
     icon: "wifi-outline",
+  },
+  {
+    key: "planRequest",
+    title: "Plan Request",
+    subtitle: "Request a plan manually",
+    icon: "swap-horizontal-outline",
   },
   {
     key: "insights",
@@ -79,6 +91,18 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
           onChangeSection={setActiveSection}
         />
         <RoutersScreen />
+      </View>
+    );
+  }
+
+  if (activeSection === "planRequest") {
+    return (
+      <View style={styles.screen}>
+        <MoreHeader
+          activeSection={activeSection}
+          onChangeSection={setActiveSection}
+        />
+        <ManualPlanChangeRequestScreen />
       </View>
     );
   }
