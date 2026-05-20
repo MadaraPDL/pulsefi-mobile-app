@@ -57,24 +57,44 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         </Text>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Email or username</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Email or username</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
             placeholder="user@example.com"
-            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+            placeholderTextColor={colors.textSubtle}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                color: colors.text,
+              },
+            ]}
             value={identifier}
             onChangeText={setIdentifier}
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={[styles.label, { color: colors.textMuted }]}>Password</Text>
           <TextInput
             placeholder="Your password"
+            placeholderTextColor={colors.textSubtle}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
             secureTextEntry
-            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                color: colors.text,
+              },
+            ]}
             value={password}
             onChangeText={setPassword}
           />
@@ -88,13 +108,17 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
         <Pressable
           disabled={isSubmitting}
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
+          style={[
+            styles.button,
+            { backgroundColor: colors.primary },
+            isSubmitting && styles.buttonDisabled,
+          ]}
           onPress={() => void handleLogin()}
         >
           {isSubmitting ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.buttonText} />
           ) : (
-            <Text style={styles.buttonText}>Sign in</Text>
+            <Text style={[styles.buttonText, { color: colors.buttonText }]}>Sign in</Text>
           )}
         </Pressable>
       </View>
