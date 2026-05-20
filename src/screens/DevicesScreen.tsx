@@ -17,12 +17,14 @@ import {
   getMyDevicePolicies,
   getMyDevices,
   getMyDeviceUsageList,
+  getMyRouterCapabilities,
 } from "../api/appUser";
 import type {
   DecimalLike,
   MyDevice,
   MyDevicePolicy,
   MyDeviceUsage,
+  MyRouterCapabilities,
   MyUsageTotals,
 } from "../types/appUser";
 
@@ -30,6 +32,7 @@ type DevicesData = {
   devices: MyDevice[];
   deviceUsage: MyDeviceUsage[];
   policies: MyDevicePolicy[];
+  routerCapabilities: Record<string, MyRouterCapabilities | null>;
 };
 
 type LimitDraft = {
@@ -79,6 +82,33 @@ function formatLabel(value: string) {
 
 function getDeviceDisplayName(device: MyDevice) {
   return device.device_name ?? device.device_type ?? "Unnamed device";
+}
+
+function getRouterModeLabel(capabilities: MyRouterCapabilities | null | undefined) {
+  if (!capabilities) {
+    return "Capabilities unavailable";
+  }
+
+  if (capabilities.is_simulator) {
+    return "Simulator mode";
+  }
+
+  return `${formatLabel(capabilities.integration_mode)} mode`;
+}
+
+function getCapabilityHelpText(
+  capabilities: MyRouterCapabilities | null | undefined,
+  actionName: "bandwidth" | "priority"
+) {
+  if (!capabilities) {
+    return "Router capabilities could not be loaded. Pull down to refresh and try again.";
+  }
+
+  if (actionName === "bandwidth") {
+    return "This router does not support bandwidth limits, so PulseFi cannot apply this action here.";
+  }
+
+  return "This router does not support device priority, so PulseFi cannot apply this action here.";
 }
 
 function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
@@ -175,7 +205,31 @@ export function DevicesScreen() {
         getMyDevicePolicies(50),
       ]);
 
-      setData({ devices, deviceUsage, policies });
+      const routerIds = Array.from(
+        new Set(devices.map((device) => device.router_id))
+      );
+
+      const capabilityEntries = await Promise.all(
+        routerIds.map(async (routerId) => {
+          try {
+            const capabilities = await getMyRouterCapabilities(routerId);
+            return [routerId, capabilities] as const;
+          } catch {
+            return [routerId, null] as const;
+          }
+        })
+      );
+
+      const routerCapabilities =
+        capabilityEntries.reduce<Record<string, MyRouterCapabilities | null>>(
+          (current, [routerId, capabilities]) => ({
+            ...current,
+            [routerId]: capabilities,
+          }),
+          {}
+        );
+
+      setData({ devices, deviceUsage, policies, routerCapabilities });
 
       setLimitDrafts((currentDrafts) => {
         const nextDrafts = { ...currentDrafts };
@@ -278,6 +332,17 @@ export function DevicesScreen() {
   }
 
   async function handleCreateCustomLimit(deviceId: string) {
+    const device = data?.devices.find((item) => item.id === deviceId);
+    const capabilities = device
+      ? data?.routerCapabilities[device.router_id]
+      : null;
+
+    if (!capabilities?.can_apply_bandwidth_limit) {
+      setErrorMessage(getCapabilityHelpText(capabilities, "bandwidth"));
+      setSuccessMessage(null);
+      return;
+    }
+
     const draft = limitDrafts[deviceId] ?? {
       downloadLimitMbps: "10",
       uploadLimitMbps: "2",
@@ -297,6 +362,25 @@ export function DevicesScreen() {
       (targetDeviceId) =>
         createBandwidthLimitPolicy(targetDeviceId, downloadLimit, uploadLimit),
       `Bandwidth policy created: ${downloadLimit} Mbps download / ${uploadLimit} Mbps upload. Execute it to apply.`
+    );
+  }
+
+  async function handleCreateHighPriority(deviceId: string) {
+    const device = data?.devices.find((item) => item.id === deviceId);
+    const capabilities = device
+      ? data?.routerCapabilities[device.router_id]
+      : null;
+
+    if (!capabilities?.can_apply_device_priority) {
+      setErrorMessage(getCapabilityHelpText(capabilities, "priority"));
+      setSuccessMessage(null);
+      return;
+    }
+
+    await createAndAddPolicy(
+      deviceId,
+      (targetDeviceId) => createDevicePriorityPolicy(targetDeviceId, 8),
+      "Priority policy created. Execute it to apply."
     );
   }
 
@@ -392,6 +476,11 @@ export function DevicesScreen() {
               downloadLimitMbps: "10",
               uploadLimitMbps: "2",
             };
+            const routerCapabilities = data.routerCapabilities[device.router_id];
+            const canApplyBandwidthLimit =
+              routerCapabilities?.can_apply_bandwidth_limit === true;
+            const canApplyDevicePriority =
+              routerCapabilities?.can_apply_device_priority === true;
 
             return (
               <View key={device.id} style={styles.deviceRow}>
@@ -437,6 +526,12 @@ export function DevicesScreen() {
                       {formatDateTime(device.last_seen)}
                     </Text>
                   </Text>
+                  <Text style={styles.cardText}>
+                    Router mode:{" "}
+                    <Text style={styles.boldText}>
+                      {getRouterModeLabel(routerCapabilities)}
+                    </Text>
+                  </Text>
                 </View>
 
                 <DeviceUsageSummary usage={usage} />
@@ -446,6 +541,17 @@ export function DevicesScreen() {
                   <Text style={styles.smallText}>
                     Set separate download and upload Mbps for this device.
                   </Text>
+                  <Text
+                    style={
+                      canApplyBandwidthLimit
+                        ? styles.smallText
+                        : styles.failureText
+                    }
+                  >
+                    {canApplyBandwidthLimit
+                      ? "Router supports custom bandwidth limits."
+                      : getCapabilityHelpText(routerCapabilities, "bandwidth")}
+                  </Text>
 
                   <View style={styles.inputGrid}>
                     <View style={styles.inputGroup}>
@@ -454,6 +560,7 @@ export function DevicesScreen() {
                         value={draft.downloadLimitMbps}
                         keyboardType="decimal-pad"
                         inputMode="decimal"
+                        editable={canApplyBandwidthLimit}
                         style={styles.input}
                         placeholder="10"
                         onChangeText={(value) =>
@@ -468,6 +575,7 @@ export function DevicesScreen() {
                         value={draft.uploadLimitMbps}
                         keyboardType="decimal-pad"
                         inputMode="decimal"
+                        editable={canApplyBandwidthLimit}
                         style={styles.input}
                         placeholder="2"
                         onChangeText={(value) =>
@@ -478,37 +586,50 @@ export function DevicesScreen() {
                   </View>
 
                   <Pressable
-                    disabled={isWorkingOnDevice}
+                    disabled={isWorkingOnDevice || !canApplyBandwidthLimit}
                     style={[
                       styles.primaryButton,
-                      isWorkingOnDevice && styles.buttonDisabled,
+                      (isWorkingOnDevice || !canApplyBandwidthLimit) &&
+                        styles.buttonDisabled,
                     ]}
                     onPress={() => void handleCreateCustomLimit(device.id)}
                   >
                     <Text style={styles.primaryButtonText}>
-                      {isWorkingOnDevice ? "Working..." : "Create custom limit"}
+                      {isWorkingOnDevice
+                        ? "Working..."
+                        : canApplyBandwidthLimit
+                          ? "Create custom limit"
+                          : "Limit not supported"}
                     </Text>
                   </Pressable>
                 </View>
 
                 <View style={styles.actionGrid}>
-                  <Pressable
-                    disabled={isWorkingOnDevice}
-                    style={[
-                      styles.secondaryButton,
-                      isWorkingOnDevice && styles.buttonDisabled,
-                    ]}
-                    onPress={() =>
-                      void createAndAddPolicy(
-                        device.id,
-                        (targetDeviceId) =>
-                          createDevicePriorityPolicy(targetDeviceId, 8),
-                        "Priority policy created. Execute it to apply."
-                      )
+                  <Text
+                    style={
+                      canApplyDevicePriority ? styles.smallText : styles.failureText
                     }
                   >
+                    {canApplyDevicePriority
+                      ? "Router supports device priority actions."
+                      : getCapabilityHelpText(routerCapabilities, "priority")}
+                  </Text>
+
+                  <Pressable
+                    disabled={isWorkingOnDevice || !canApplyDevicePriority}
+                    style={[
+                      styles.secondaryButton,
+                      (isWorkingOnDevice || !canApplyDevicePriority) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={() => void handleCreateHighPriority(device.id)}
+                  >
                     <Text style={styles.secondaryButtonText}>
-                      {isWorkingOnDevice ? "Working..." : "High priority"}
+                      {isWorkingOnDevice
+                        ? "Working..."
+                        : canApplyDevicePriority
+                          ? "High priority"
+                          : "Priority not supported"}
                     </Text>
                   </Pressable>
                 </View>

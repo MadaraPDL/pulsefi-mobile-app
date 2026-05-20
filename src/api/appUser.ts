@@ -9,6 +9,7 @@ import type {
   MyPlanChangeRequest,
   MyPrediction,
   MyRecommendation,
+  MyRouterCapabilities,
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
@@ -32,6 +33,10 @@ export function getMyUsageRecords(limit = 20) {
 
 export function getMyDevices(limit = 50) {
   return apiRequest<MyDevice[]>(`/me/devices?limit=${limit}`);
+}
+
+export function getMyRouterCapabilities(routerId: string) {
+  return apiRequest<MyRouterCapabilities>(`/me/routers/${routerId}/capabilities`);
 }
 
 export function getMyDeviceUsageList(limit = 50) {

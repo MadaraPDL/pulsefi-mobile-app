@@ -104,6 +104,18 @@ export type MyDevice = {
   updated_at: string;
 };
 
+export type MyRouterCapabilities = {
+  router_id: string;
+  adapter_name: string;
+  integration_mode: string;
+  is_simulator: boolean;
+  can_read_total_usage: boolean;
+  can_read_connected_devices: boolean;
+  can_read_device_usage: boolean;
+  can_apply_bandwidth_limit: boolean;
+  can_apply_device_priority: boolean;
+};
+
 export type MyDeviceUsage = {
   id: string;
   router_id: string;
