@@ -82,14 +82,26 @@ export function getMyPredictions(limit = 20) {
   return apiRequest<MyPrediction[]>(`/me/predictions?limit=${limit}`);
 }
 
+export function getMyPrediction(predictionId: string) {
+  return apiRequest<MyPrediction>(`/me/predictions/${predictionId}`);
+}
+
 export function getMyRecommendations(limit = 20) {
   return apiRequest<MyRecommendation[]>(`/me/recommendations?limit=${limit}`);
+}
+
+export function getMyRecommendation(recommendationId: string) {
+  return apiRequest<MyRecommendation>(`/me/recommendations/${recommendationId}`);
 }
 
 export function getMyPlanChangeRequests(limit = 20) {
   return apiRequest<MyPlanChangeRequest[]>(
     `/me/plan-change-requests?limit=${limit}`
   );
+}
+
+export function getMyPlanChangeRequest(requestId: string) {
+  return apiRequest<MyPlanChangeRequest>(`/me/plan-change-requests/${requestId}`);
 }
 
 export function createPlanChangeRequestFromRecommendation(
