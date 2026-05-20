@@ -8,6 +8,7 @@ import { DevicesScreen } from "../screens/DevicesScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { InsightsScreen } from "../screens/InsightsScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
+import { SubscriptionsScreen } from "../screens/SubscriptionsScreen";
 import { UsageScreen } from "../screens/UsageScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
@@ -24,6 +25,10 @@ const tabIcons: Record<
   Home: {
     focused: "home",
     unfocused: "home-outline",
+  },
+  Subscriptions: {
+    focused: "card",
+    unfocused: "card-outline",
   },
   Usage: {
     focused: "stats-chart",
@@ -99,6 +104,14 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen
+        name="Subscriptions"
+        component={SubscriptionsScreen}
+        options={{
+          tabBarLabel: "Plans",
+          title: "Subscriptions",
+        }}
+      />
       <Tab.Screen name="Usage" component={UsageScreen} />
       <Tab.Screen name="Devices" component={DevicesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />

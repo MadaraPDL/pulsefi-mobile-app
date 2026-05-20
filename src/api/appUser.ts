@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+﻿import { apiRequest } from "./client";
 import type {
   AppUserSummary,
   MyAlert,
@@ -21,6 +21,10 @@ export function getMySummary() {
 
 export function getMySubscriptions() {
   return apiRequest<MySubscription[]>("/me/subscriptions");
+}
+
+export function getMySubscription(subscriptionId: string) {
+  return apiRequest<MySubscription>(`/me/subscriptions/${subscriptionId}`);
 }
 
 export function getMyUsageSummary() {

@@ -5,6 +5,7 @@
 
 export type AppTabParamList = {
   Home: undefined;
+  Subscriptions: undefined;
   Usage: undefined;
   Devices: undefined;
   Alerts: undefined;
