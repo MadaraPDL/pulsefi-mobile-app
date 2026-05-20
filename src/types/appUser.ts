@@ -104,3 +104,19 @@ export type MyDeviceUsage = {
   updated_at: string;
   usage: MyUsageTotals;
 };
+
+export type MyAlert = {
+  id: string;
+  user_subscription_id: string;
+  device_id: string | null;
+  connection_log_id: string | null;
+  usage_id: string | null;
+  prediction_id: string | null;
+  alert_type: string;
+  severity: string;
+  title: string;
+  message: string;
+  status: string;
+  read_at: string | null;
+  created_at: string;
+};

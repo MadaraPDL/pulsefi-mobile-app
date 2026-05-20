@@ -1,6 +1,7 @@
 ﻿import { apiRequest } from "./client";
 import type {
   AppUserSummary,
+  MyAlert,
   MyDevice,
   MyDeviceUsage,
   MySubscription,
@@ -30,4 +31,14 @@ export function getMyDevices(limit = 50) {
 
 export function getMyDeviceUsageList(limit = 50) {
   return apiRequest<MyDeviceUsage[]>(`/me/usage/devices?limit=${limit}`);
+}
+
+export function getMyAlerts(limit = 50) {
+  return apiRequest<MyAlert[]>(`/me/alerts?limit=${limit}`);
+}
+
+export function markMyAlertAsRead(alertId: string) {
+  return apiRequest<MyAlert>(`/me/alerts/${alertId}/read`, {
+    method: "PATCH",
+  });
 }
