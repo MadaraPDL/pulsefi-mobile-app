@@ -26,6 +26,8 @@ function isUnread(alert: MyAlert) {
   return alert.read_at === null && alert.status !== "read";
 }
 
+type AlertFilter = "all" | "unread" | "read" | "high";
+
 function getSeverityStyle(
   severity: string,
   colors: ReturnType<typeof usePulseFiTheme>["colors"]
@@ -64,6 +66,7 @@ export function AlertsScreen() {
   const [loadingAlertDetailId, setLoadingAlertDetailId] =
     useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<MyAlert | null>(null);
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadAlerts = useCallback(async (refreshing = false) => {
@@ -97,6 +100,25 @@ export function AlertsScreen() {
   const unreadCount = useMemo(() => {
     return alerts.filter(isUnread).length;
   }, [alerts]);
+
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter((alert) => {
+      if (alertFilter === "all") {
+        return true;
+      }
+
+      if (alertFilter === "unread") {
+        return isUnread(alert);
+      }
+
+      if (alertFilter === "read") {
+        return !isUnread(alert);
+      }
+
+      const severity = alert.severity.toLowerCase();
+      return severity === "high" || severity === "critical";
+    });
+  }, [alertFilter, alerts]);
 
   async function handleViewAlertDetail(alertId: string) {
     if (selectedAlert?.id === alertId) {
@@ -195,8 +217,49 @@ export function AlertsScreen() {
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Latest Alerts</Text>
 
-        {alerts.length ? (
-          alerts.map((alert) => {
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {(
+            [
+              { key: "all", label: `All (${alerts.length})` },
+              { key: "unread", label: `Unread (${unreadCount})` },
+              {
+                key: "read",
+                label: `Read (${alerts.length - unreadCount})`,
+              },
+              { key: "high", label: "High severity" },
+            ] as Array<{ key: AlertFilter; label: string }>
+          ).map((option) => {
+            const active = alertFilter === option.key;
+
+            return (
+              <Pressable
+                key={option.key}
+                style={{
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: active ? colors.primary : colors.border,
+                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                }}
+                onPress={() => setAlertFilter(option.key)}
+              >
+                <Text
+                  style={{
+                    color: active ? colors.buttonText : colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: "900",
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {filteredAlerts.length ? (
+          filteredAlerts.map((alert) => {
             const unread = isUnread(alert);
             const isUpdating = updatingAlertId === alert.id;
             const isLoadingDetail = loadingAlertDetailId === alert.id;
@@ -348,7 +411,7 @@ export function AlertsScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No alerts found yet. Alerts will appear after simulator ingestion or
+            No alerts match this filter yet. Alerts will appear after simulator ingestion or
             intelligence runs create usage/device events.
           </Text>
         )}

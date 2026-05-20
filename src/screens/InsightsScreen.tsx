@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -32,6 +32,9 @@ type InsightsData = {
   recommendations: MyRecommendation[];
   planChangeRequests: MyPlanChangeRequest[];
 };
+
+type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
+type PlanRequestStatusFilter = "all" | "pending" | "approved" | "rejected";
 
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -117,6 +120,10 @@ export function InsightsScreen() {
     useState<MyRecommendation | null>(null);
   const [selectedPlanChangeRequest, setSelectedPlanChangeRequest] =
     useState<MyPlanChangeRequest | null>(null);
+  const [recommendationStatusFilter, setRecommendationStatusFilter] =
+    useState<RecommendationStatusFilter>("all");
+  const [planRequestStatusFilter, setPlanRequestStatusFilter] =
+    useState<PlanRequestStatusFilter>("all");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -153,6 +160,28 @@ export function InsightsScreen() {
   useEffect(() => {
     void loadInsights();
   }, [loadInsights]);
+
+  const filteredRecommendations = useMemo(() => {
+    return (data?.recommendations ?? []).filter((recommendation) => {
+      if (recommendationStatusFilter === "all") {
+        return true;
+      }
+
+      return (
+        recommendation.status.toLowerCase() === recommendationStatusFilter
+      );
+    });
+  }, [data?.recommendations, recommendationStatusFilter]);
+
+  const filteredPlanChangeRequests = useMemo(() => {
+    return (data?.planChangeRequests ?? []).filter((request) => {
+      if (planRequestStatusFilter === "all") {
+        return true;
+      }
+
+      return request.status.toLowerCase() === planRequestStatusFilter;
+    });
+  }, [data?.planChangeRequests, planRequestStatusFilter]);
 
   async function handleViewPredictionDetail(predictionId: string) {
     if (selectedPrediction?.id === predictionId) {
@@ -452,8 +481,46 @@ export function InsightsScreen() {
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Recommendations</Text>
 
-        {data?.recommendations.length ? (
-          data.recommendations.map((recommendation) => {
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {(
+            [
+              { key: "all", label: `All (${data?.recommendations.length ?? 0})` },
+              { key: "pending", label: "Pending" },
+              { key: "accepted", label: "Accepted" },
+              { key: "rejected", label: "Rejected" },
+            ] as Array<{ key: RecommendationStatusFilter; label: string }>
+          ).map((option) => {
+            const active = recommendationStatusFilter === option.key;
+
+            return (
+              <Pressable
+                key={option.key}
+                style={{
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: active ? colors.primary : colors.border,
+                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                }}
+                onPress={() => setRecommendationStatusFilter(option.key)}
+              >
+                <Text
+                  style={{
+                    color: active ? colors.buttonText : colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: "900",
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {filteredRecommendations.length ? (
+          filteredRecommendations.map((recommendation) => {
             const isCreating = creatingRequestId === recommendation.id;
             const canRequest = canRequestPlanChange(recommendation);
 
@@ -587,7 +654,7 @@ export function InsightsScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No recommendations found yet. Recommendations will appear after
+            No recommendations match this filter yet. Recommendations will appear after
             predictions are generated.
           </Text>
         )}
@@ -596,8 +663,46 @@ export function InsightsScreen() {
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Plan Change Requests</Text>
 
-        {data?.planChangeRequests.length ? (
-          data.planChangeRequests.map((request) => (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {(
+            [
+              { key: "all", label: `All (${data?.planChangeRequests.length ?? 0})` },
+              { key: "pending", label: "Pending" },
+              { key: "approved", label: "Approved" },
+              { key: "rejected", label: "Rejected" },
+            ] as Array<{ key: PlanRequestStatusFilter; label: string }>
+          ).map((option) => {
+            const active = planRequestStatusFilter === option.key;
+
+            return (
+              <Pressable
+                key={option.key}
+                style={{
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: active ? colors.primary : colors.border,
+                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  paddingHorizontal: 12,
+                  paddingVertical: 7,
+                }}
+                onPress={() => setPlanRequestStatusFilter(option.key)}
+              >
+                <Text
+                  style={{
+                    color: active ? colors.buttonText : colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: "900",
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {filteredPlanChangeRequests.length ? (
+          filteredPlanChangeRequests.map((request) => (
             <View key={request.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
               <View style={styles.itemHeader}>
                 <View style={styles.itemTitleGroup}>
@@ -707,7 +812,7 @@ export function InsightsScreen() {
           ))
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No plan change requests yet. You can create one from an eligible
+            No plan change requests match this filter yet. You can create one from an eligible
             recommendation.
           </Text>
         )}

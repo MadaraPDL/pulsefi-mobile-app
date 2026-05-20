@@ -51,6 +51,9 @@ type DeviceDetail = {
   usage: MyDeviceUsage | null;
 };
 
+type DeviceTrustFilter = "all" | "trusted" | "untrusted";
+type DeviceStatusFilter = "all" | "connected" | "not_connected";
+
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -323,6 +326,11 @@ export function DevicesScreen() {
     useState<string | null>(null);
   const [selectedPolicyDetail, setSelectedPolicyDetail] =
     useState<MyDevicePolicy | null>(null);
+  const [deviceSearch, setDeviceSearch] = useState("");
+  const [deviceTrustFilter, setDeviceTrustFilter] =
+    useState<DeviceTrustFilter>("all");
+  const [deviceStatusFilter, setDeviceStatusFilter] =
+    useState<DeviceStatusFilter>("all");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -419,6 +427,39 @@ export function DevicesScreen() {
 
     return map;
   }, [data?.policies]);
+
+  const filteredDevices = useMemo(() => {
+    const search = deviceSearch.trim().toLowerCase();
+
+    return (data?.devices ?? []).filter((device) => {
+      const searchableText = [
+        getDeviceDisplayName(device),
+        device.mac_address,
+        device.ip_address ?? "",
+        device.device_type ?? "",
+        device.status,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesSearch = !search || searchableText.includes(search);
+
+      const matchesTrust =
+        deviceTrustFilter === "all" ||
+        (deviceTrustFilter === "trusted" && device.is_trusted) ||
+        (deviceTrustFilter === "untrusted" && !device.is_trusted);
+
+      const normalizedStatus = device.status.toLowerCase();
+      const matchesStatus =
+        deviceStatusFilter === "all" ||
+        (deviceStatusFilter === "connected" &&
+          normalizedStatus === "connected") ||
+        (deviceStatusFilter === "not_connected" &&
+          normalizedStatus !== "connected");
+
+      return matchesSearch && matchesTrust && matchesStatus;
+    });
+  }, [data?.devices, deviceSearch, deviceStatusFilter, deviceTrustFilter]);
 
   function updateLimitDraft(
     deviceId: string,
@@ -736,8 +777,109 @@ export function DevicesScreen() {
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Device List</Text>
 
-        {data?.devices.length ? (
-          data.devices.map((device) => {
+        <TextInput
+          value={deviceSearch}
+          onChangeText={setDeviceSearch}
+          placeholder="Search by name, MAC, IP, type, or status"
+          placeholderTextColor={colors.textSubtle}
+          selectionColor={colors.primary}
+          cursorColor={colors.primary}
+          style={[
+            styles.input,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+              color: colors.text,
+            },
+          ]}
+        />
+
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {(
+              [
+                { key: "all", label: "All" },
+                { key: "trusted", label: "Trusted" },
+                { key: "untrusted", label: "Untrusted" },
+              ] as Array<{ key: DeviceTrustFilter; label: string }>
+            ).map((option) => {
+              const active = deviceTrustFilter === option.key;
+
+              return (
+                <Pressable
+                  key={option.key}
+                  style={{
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: active ? colors.primary : colors.border,
+                    backgroundColor: active
+                      ? colors.primary
+                      : colors.surfaceMuted,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                  }}
+                  onPress={() => setDeviceTrustFilter(option.key)}
+                >
+                  <Text
+                    style={{
+                      color: active ? colors.buttonText : colors.textMuted,
+                      fontSize: 12,
+                      fontWeight: "900",
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {(
+              [
+                { key: "all", label: "All status" },
+                { key: "connected", label: "Connected" },
+                { key: "not_connected", label: "Not connected" },
+              ] as Array<{ key: DeviceStatusFilter; label: string }>
+            ).map((option) => {
+              const active = deviceStatusFilter === option.key;
+
+              return (
+                <Pressable
+                  key={option.key}
+                  style={{
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: active ? colors.primary : colors.border,
+                    backgroundColor: active
+                      ? colors.primary
+                      : colors.surfaceMuted,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                  }}
+                  onPress={() => setDeviceStatusFilter(option.key)}
+                >
+                  <Text
+                    style={{
+                      color: active ? colors.buttonText : colors.textMuted,
+                      fontSize: 12,
+                      fontWeight: "900",
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Showing {filteredDevices.length} of {data?.devices.length ?? 0} devices.
+        </Text>
+
+        {filteredDevices.length ? (
+          filteredDevices.map((device) => {
             const usage = usageByDeviceId.get(device.id)?.usage;
             const policies = policiesByDeviceId.get(device.id) ?? [];
             const pendingPolicies = policies.filter(
@@ -1117,7 +1259,7 @@ export function DevicesScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No devices found yet. Run simulator device ingestion from the ISP
+            No devices match this filter yet. Run simulator device ingestion from the ISP
             Admin dashboard to generate demo device data.
           </Text>
         )}
