@@ -136,6 +136,7 @@ export function InsightsScreen() {
       }
 
       setErrorMessage(null);
+      setSuccessMessage(null);
 
       const [predictions, recommendations, planChangeRequests] =
         await Promise.all([

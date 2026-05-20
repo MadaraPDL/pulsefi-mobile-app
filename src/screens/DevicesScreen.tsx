@@ -15,6 +15,7 @@ import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import {
   createBandwidthLimitPolicy,
   createDevicePriorityPolicy,
+  deactivateMyDevicePolicy,
   executeMyDevicePolicy,
   getMyDevice,
   getMyDevicePolicies,
@@ -154,33 +155,57 @@ function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
   );
 }
 
+function getLatestPolicy(
+  policies: MyDevicePolicy[],
+  policyType: "bandwidth_limit" | "device_priority"
+) {
+  return policies
+    .filter((policy) => policy.policy_type === policyType && policy.is_active)
+    .sort(
+      (first, second) =>
+        new Date(second.requested_at).getTime() -
+        new Date(first.requested_at).getTime()
+    )[0];
+}
+
 function DevicePolicies({
   policies,
   selectedPolicyDetail,
   loadingPolicyDetailId,
+  workingPolicyId,
   onViewPolicyDetail,
+  onDeactivatePolicy,
 }: {
   policies: MyDevicePolicy[];
   selectedPolicyDetail: MyDevicePolicy | null;
   loadingPolicyDetailId: string | null;
+  workingPolicyId: string | null;
   onViewPolicyDetail: (policyId: string) => void;
+  onDeactivatePolicy: (policy: MyDevicePolicy) => void;
 }) {
   const { colors } = usePulseFiTheme();
+  const latestBandwidthPolicy = getLatestPolicy(policies, "bandwidth_limit");
+  const latestPriorityPolicy = getLatestPolicy(policies, "device_priority");
+  const currentPolicies = [latestBandwidthPolicy, latestPriorityPolicy].filter(
+    Boolean
+  ) as MyDevicePolicy[];
 
-  if (!policies.length) {
+  if (!currentPolicies.length) {
     return (
       <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-        No policies created for this device.
+        No active bandwidth limit or priority policy for this device.
       </Text>
     );
   }
 
   return (
     <View style={styles.policyList}>
-      {policies.map((policy) => {
+      {currentPolicies.map((policy) => {
         const selected = selectedPolicyDetail?.id === policy.id;
         const detailPolicy = selected ? selectedPolicyDetail : policy;
         const isLoadingDetail = loadingPolicyDetailId === policy.id;
+        const isWorking = workingPolicyId === policy.id;
+        const isBandwidth = policy.policy_type === "bandwidth_limit";
 
         return (
           <View
@@ -199,15 +224,47 @@ function DevicePolicies({
               },
             ]}
           >
-            <Text style={[styles.policyTitle, { color: colors.text }]}>
-              {formatLabel(policy.policy_type)}
-            </Text>
-            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              Status: {formatLabel(policy.status)} ? Active:{" "}
-              {policy.is_active ? "Yes" : "No"}
-            </Text>
+            <View style={styles.alertHeader}>
+              <View style={styles.alertTitleGroup}>
+                <Text style={[styles.policyTitle, { color: colors.text }]}>
+                  {isBandwidth ? "Current bandwidth limit" : "Current priority"}
+                </Text>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                  Status: {formatLabel(policy.status)} ? Active:{" "}
+                  {policy.is_active ? "Yes" : "No"}
+                </Text>
+              </View>
 
-            {policy.policy_type === "bandwidth_limit" ? (
+              <Pressable
+                disabled={isWorking}
+                style={[
+                  styles.secondaryButton,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    paddingHorizontal: 12,
+                    paddingVertical: 9,
+                  },
+                  isWorking && styles.buttonDisabled,
+                ]}
+                onPress={() => onDeactivatePolicy(policy)}
+              >
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    { color: colors.dangerText, fontSize: 12 },
+                  ]}
+                >
+                  {isWorking
+                    ? "Removing..."
+                    : isBandwidth
+                      ? "Remove limit"
+                      : "Remove priority"}
+                </Text>
+              </Pressable>
+            </View>
+
+            {isBandwidth ? (
               <>
                 <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                   Download limit: {formatMbps(policy.download_limit_mbps)}
@@ -216,13 +273,11 @@ function DevicePolicies({
                   Upload limit: {formatMbps(policy.upload_limit_mbps)}
                 </Text>
               </>
-            ) : null}
-
-            {policy.policy_type === "device_priority" ? (
+            ) : (
               <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                 Priority level: {policy.priority_level ?? "Not set"}
               </Text>
-            ) : null}
+            )}
 
             {selected ? (
               <View
@@ -237,18 +292,6 @@ function DevicePolicies({
               >
                 <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
                   Policy details
-                </Text>
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                  Policy ID:{" "}
-                  <Text style={{ color: colors.text, fontWeight: "900" }}>
-                    {detailPolicy.id}
-                  </Text>
-                </Text>
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                  Router ID:{" "}
-                  <Text style={{ color: colors.text, fontWeight: "900" }}>
-                    {detailPolicy.router_id}
-                  </Text>
                 </Text>
                 <Text style={[styles.cardText, { color: colors.textMuted }]}>
                   Requested:{" "}
@@ -306,6 +349,7 @@ function DevicePolicies({
     </View>
   );
 }
+
 
 
 export function DevicesScreen() {
@@ -495,7 +539,15 @@ export function DevicesScreen() {
 
         return {
           ...current,
-          policies: [policy, ...current.policies],
+          policies: [
+            policy,
+            ...current.policies.map((item) =>
+              item.device_id === policy.device_id &&
+              item.policy_type === policy.policy_type
+                ? { ...item, is_active: false }
+                : item
+            ),
+          ],
         };
       });
 
@@ -690,9 +742,50 @@ export function DevicesScreen() {
 
     await createAndAddPolicy(
       deviceId,
-      (targetDeviceId) => createDevicePriorityPolicy(targetDeviceId, 8),
+      (targetDeviceId) => createDevicePriorityPolicy(targetDeviceId, 5),
       "Priority policy created. Execute it to apply."
     );
+  }
+
+  async function handleDeactivatePolicy(policy: MyDevicePolicy) {
+    try {
+      setWorkingPolicyId(policy.id);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const updatedPolicy = await deactivateMyDevicePolicy(policy.id);
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          policies: current.policies.map((item) =>
+            item.id === updatedPolicy.id ? updatedPolicy : item
+          ),
+        };
+      });
+
+      setSelectedPolicyDetail((currentDetail) =>
+        currentDetail?.id === updatedPolicy.id ? updatedPolicy : currentDetail
+      );
+
+      setSuccessMessage(
+        policy.policy_type === "bandwidth_limit"
+          ? "Bandwidth limit removed from current PulseFi policy state."
+          : "Device priority removed from current PulseFi policy state."
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not remove current device policy."
+      );
+    } finally {
+      setWorkingPolicyId(null);
+    }
   }
 
   async function handleExecutePolicy(policyId: string) {
@@ -1252,7 +1345,9 @@ export function DevicesScreen() {
                   policies={policies}
                   selectedPolicyDetail={selectedPolicyDetail}
                   loadingPolicyDetailId={loadingPolicyDetailId}
+                  workingPolicyId={workingPolicyId}
                   onViewPolicyDetail={handleViewPolicyDetail}
+                  onDeactivatePolicy={handleDeactivatePolicy}
                 />
               </View>
             );

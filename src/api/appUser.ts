@@ -166,7 +166,7 @@ export function createBandwidthLimitPolicy(
   });
 }
 
-export function createDevicePriorityPolicy(deviceId: string, priorityLevel = 8) {
+export function createDevicePriorityPolicy(deviceId: string, priorityLevel = 5) {
   return apiRequest<MyDevicePolicy>("/me/device-policies", {
     method: "POST",
     body: JSON.stringify({
@@ -175,6 +175,15 @@ export function createDevicePriorityPolicy(deviceId: string, priorityLevel = 8) 
       priority_level: priorityLevel,
     }),
   });
+}
+
+export function deactivateMyDevicePolicy(policyId: string) {
+  return apiRequest<MyDevicePolicy>(
+    `/me/device-policies/${policyId}/deactivate`,
+    {
+      method: "PATCH",
+    }
+  );
 }
 
 export function executeMyDevicePolicy(policyId: string) {

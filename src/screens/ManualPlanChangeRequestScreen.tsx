@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -101,6 +101,7 @@ export function ManualPlanChangeRequestScreen() {
       }
 
       setErrorMessage(null);
+      setSuccessMessage(null);
 
       const [subscriptionsResult, plansResult, requestsResult] =
         await Promise.all([
