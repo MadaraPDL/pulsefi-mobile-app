@@ -1,4 +1,4 @@
-﻿export type DecimalLike = number | string;
+export type DecimalLike = number | string;
 
 export type AppUserSession = {
   access_token: string;
@@ -185,6 +185,8 @@ export type MyDevicePolicy = {
   router_id: string;
   policy_type: string;
   bandwidth_limit_mbps: DecimalLike | null;
+  download_limit_mbps: DecimalLike | null;
+  upload_limit_mbps: DecimalLike | null;
   priority_level: number | null;
   status: string;
   requested_at: string;

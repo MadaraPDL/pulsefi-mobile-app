@@ -1,4 +1,4 @@
-﻿import { apiRequest } from "./client";
+import { apiRequest } from "./client";
 import type {
   AppUserSummary,
   MyAlert,
@@ -80,13 +80,18 @@ export function getMyDevicePolicies(limit = 50) {
   return apiRequest<MyDevicePolicy[]>(`/me/device-policies?limit=${limit}`);
 }
 
-export function createBandwidthLimitPolicy(deviceId: string, bandwidthLimitMbps = 10) {
+export function createBandwidthLimitPolicy(
+  deviceId: string,
+  downloadLimitMbps: number,
+  uploadLimitMbps: number
+) {
   return apiRequest<MyDevicePolicy>("/me/device-policies", {
     method: "POST",
     body: JSON.stringify({
       device_id: deviceId,
       policy_type: "bandwidth_limit",
-      bandwidth_limit_mbps: bandwidthLimitMbps,
+      download_limit_mbps: downloadLimitMbps,
+      upload_limit_mbps: uploadLimitMbps,
     }),
   });
 }

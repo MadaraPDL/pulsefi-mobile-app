@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -31,9 +32,19 @@ type DevicesData = {
   policies: MyDevicePolicy[];
 };
 
+type LimitDraft = {
+  downloadLimitMbps: string;
+  uploadLimitMbps: string;
+};
+
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function formatMb(value: DecimalLike) {
@@ -113,9 +124,14 @@ function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
           </Text>
 
           {policy.policy_type === "bandwidth_limit" ? (
-            <Text style={styles.smallText}>
-              Limit: {formatMbps(policy.bandwidth_limit_mbps)}
-            </Text>
+            <>
+              <Text style={styles.smallText}>
+                Download limit: {formatMbps(policy.download_limit_mbps)}
+              </Text>
+              <Text style={styles.smallText}>
+                Upload limit: {formatMbps(policy.upload_limit_mbps)}
+              </Text>
+            </>
           ) : null}
 
           {policy.policy_type === "device_priority" ? (
@@ -135,6 +151,7 @@ function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
 
 export function DevicesScreen() {
   const [data, setData] = useState<DevicesData | null>(null);
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, LimitDraft>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [workingDeviceId, setWorkingDeviceId] = useState<string | null>(null);
@@ -159,6 +176,21 @@ export function DevicesScreen() {
       ]);
 
       setData({ devices, deviceUsage, policies });
+
+      setLimitDrafts((currentDrafts) => {
+        const nextDrafts = { ...currentDrafts };
+
+        for (const device of devices) {
+          if (!nextDrafts[device.id]) {
+            nextDrafts[device.id] = {
+              downloadLimitMbps: "10",
+              uploadLimitMbps: "2",
+            };
+          }
+        }
+
+        return nextDrafts;
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -197,6 +229,21 @@ export function DevicesScreen() {
     return map;
   }, [data?.policies]);
 
+  function updateLimitDraft(
+    deviceId: string,
+    field: keyof LimitDraft,
+    value: string
+  ) {
+    setLimitDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [deviceId]: {
+        downloadLimitMbps: currentDrafts[deviceId]?.downloadLimitMbps ?? "10",
+        uploadLimitMbps: currentDrafts[deviceId]?.uploadLimitMbps ?? "2",
+        [field]: value,
+      },
+    }));
+  }
+
   async function createAndAddPolicy(
     deviceId: string,
     createPolicy: (deviceId: string) => Promise<MyDevicePolicy>,
@@ -228,6 +275,29 @@ export function DevicesScreen() {
     } finally {
       setWorkingDeviceId(null);
     }
+  }
+
+  async function handleCreateCustomLimit(deviceId: string) {
+    const draft = limitDrafts[deviceId] ?? {
+      downloadLimitMbps: "10",
+      uploadLimitMbps: "2",
+    };
+
+    const downloadLimit = parsePositiveNumber(draft.downloadLimitMbps);
+    const uploadLimit = parsePositiveNumber(draft.uploadLimitMbps);
+
+    if (downloadLimit === null || uploadLimit === null) {
+      setErrorMessage("Download and upload limits must be numbers greater than 0.");
+      setSuccessMessage(null);
+      return;
+    }
+
+    await createAndAddPolicy(
+      deviceId,
+      (targetDeviceId) =>
+        createBandwidthLimitPolicy(targetDeviceId, downloadLimit, uploadLimit),
+      `Bandwidth policy created: ${downloadLimit} Mbps download / ${uploadLimit} Mbps upload. Execute it to apply.`
+    );
   }
 
   async function handleExecutePolicy(policyId: string) {
@@ -273,6 +343,7 @@ export function DevicesScreen() {
   return (
     <ScrollView
       contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
@@ -283,7 +354,7 @@ export function DevicesScreen() {
       <Text style={styles.eyebrow}>Devices</Text>
       <Text style={styles.title}>Connected devices</Text>
       <Text style={styles.subtitle}>
-        View your devices, usage totals, and demo router policies.
+        View devices, usage totals, and custom download/upload router policies.
       </Text>
 
       {errorMessage ? (
@@ -317,6 +388,10 @@ export function DevicesScreen() {
               (policy) => policy.status === "pending"
             );
             const isWorkingOnDevice = workingDeviceId === device.id;
+            const draft = limitDrafts[device.id] ?? {
+              downloadLimitMbps: "10",
+              uploadLimitMbps: "2",
+            };
 
             return (
               <View key={device.id} style={styles.deviceRow}>
@@ -366,27 +441,57 @@ export function DevicesScreen() {
 
                 <DeviceUsageSummary usage={usage} />
 
-                <View style={styles.actionGrid}>
+                <View style={styles.limitBox}>
+                  <Text style={styles.policyTitle}>Custom bandwidth limit</Text>
+                  <Text style={styles.smallText}>
+                    Set separate download and upload Mbps for this device.
+                  </Text>
+
+                  <View style={styles.inputGrid}>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Download Mbps</Text>
+                      <TextInput
+                        value={draft.downloadLimitMbps}
+                        keyboardType="decimal-pad"
+                        inputMode="decimal"
+                        style={styles.input}
+                        placeholder="10"
+                        onChangeText={(value) =>
+                          updateLimitDraft(device.id, "downloadLimitMbps", value)
+                        }
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Upload Mbps</Text>
+                      <TextInput
+                        value={draft.uploadLimitMbps}
+                        keyboardType="decimal-pad"
+                        inputMode="decimal"
+                        style={styles.input}
+                        placeholder="2"
+                        onChangeText={(value) =>
+                          updateLimitDraft(device.id, "uploadLimitMbps", value)
+                        }
+                      />
+                    </View>
+                  </View>
+
                   <Pressable
                     disabled={isWorkingOnDevice}
                     style={[
-                      styles.secondaryButton,
+                      styles.primaryButton,
                       isWorkingOnDevice && styles.buttonDisabled,
                     ]}
-                    onPress={() =>
-                      void createAndAddPolicy(
-                        device.id,
-                        (targetDeviceId) =>
-                          createBandwidthLimitPolicy(targetDeviceId, 10),
-                        "Bandwidth limit policy created. Execute it to apply."
-                      )
-                    }
+                    onPress={() => void handleCreateCustomLimit(device.id)}
                   >
-                    <Text style={styles.secondaryButtonText}>
-                      {isWorkingOnDevice ? "Working..." : "Limit 10 Mbps"}
+                    <Text style={styles.primaryButtonText}>
+                      {isWorkingOnDevice ? "Working..." : "Create custom limit"}
                     </Text>
                   </Pressable>
+                </View>
 
+                <View style={styles.actionGrid}>
                   <Pressable
                     disabled={isWorkingOnDevice}
                     style={[
@@ -605,6 +710,36 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 13,
     fontWeight: "900",
+    color: "#102033",
+  },
+  limitBox: {
+    gap: 10,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: "#F6F8FB",
+  },
+  inputGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  inputGroup: {
+    flex: 1,
+    gap: 6,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#617083",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#D6E0EA",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
     color: "#102033",
   },
   actionGrid: {
