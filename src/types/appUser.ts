@@ -178,3 +178,36 @@ export type MyPlanChangeRequest = {
   admin_response: string | null;
   updated_at: string;
 };
+
+export type MyDevicePolicy = {
+  id: string;
+  device_id: string;
+  router_id: string;
+  policy_type: string;
+  bandwidth_limit_mbps: DecimalLike | null;
+  priority_level: number | null;
+  status: string;
+  requested_at: string;
+  applied_at: string | null;
+  failure_reason: string | null;
+  is_active: boolean;
+  updated_at: string;
+};
+
+export type MyRouterActionLog = {
+  id: string;
+  router_id: string;
+  policy_id: string | null;
+  action_type: string;
+  command_payload: Record<string, unknown> | null;
+  response_payload: Record<string, unknown> | null;
+  status: string;
+  error_message: string | null;
+  executed_at: string;
+};
+
+export type MyDevicePolicyExecution = {
+  policy: MyDevicePolicy;
+  action_log: MyRouterActionLog | null;
+  message: string;
+};

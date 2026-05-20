@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,10 +9,18 @@ import {
   View,
 } from "react-native";
 
-import { getMyDevices, getMyDeviceUsageList } from "../api/appUser";
+import {
+  createBandwidthLimitPolicy,
+  createDevicePriorityPolicy,
+  executeMyDevicePolicy,
+  getMyDevicePolicies,
+  getMyDevices,
+  getMyDeviceUsageList,
+} from "../api/appUser";
 import type {
   DecimalLike,
   MyDevice,
+  MyDevicePolicy,
   MyDeviceUsage,
   MyUsageTotals,
 } from "../types/appUser";
@@ -19,6 +28,7 @@ import type {
 type DevicesData = {
   devices: MyDevice[];
   deviceUsage: MyDeviceUsage[];
+  policies: MyDevicePolicy[];
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -36,12 +46,24 @@ function formatMb(value: DecimalLike) {
   return `${mb.toFixed(0)} MB`;
 }
 
+function formatMbps(value: DecimalLike | null) {
+  if (value === null) {
+    return "Not set";
+  }
+
+  return `${toNumber(value).toFixed(0)} Mbps`;
+}
+
 function formatDateTime(value: string | null) {
   if (!value) {
     return "Not seen yet";
   }
 
   return new Date(value).toLocaleString();
+}
+
+function formatLabel(value: string) {
+  return value.replaceAll("_", " ");
 }
 
 function getDeviceDisplayName(device: MyDevice) {
@@ -75,11 +97,50 @@ function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
   );
 }
 
+function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
+  if (!policies.length) {
+    return <Text style={styles.smallText}>No policies created for this device.</Text>;
+  }
+
+  return (
+    <View style={styles.policyList}>
+      {policies.map((policy) => (
+        <View key={policy.id} style={styles.policyRow}>
+          <Text style={styles.policyTitle}>{formatLabel(policy.policy_type)}</Text>
+          <Text style={styles.smallText}>
+            Status: {formatLabel(policy.status)} · Active:{" "}
+            {policy.is_active ? "Yes" : "No"}
+          </Text>
+
+          {policy.policy_type === "bandwidth_limit" ? (
+            <Text style={styles.smallText}>
+              Limit: {formatMbps(policy.bandwidth_limit_mbps)}
+            </Text>
+          ) : null}
+
+          {policy.policy_type === "device_priority" ? (
+            <Text style={styles.smallText}>
+              Priority level: {policy.priority_level ?? "Not set"}
+            </Text>
+          ) : null}
+
+          {policy.failure_reason ? (
+            <Text style={styles.failureText}>{policy.failure_reason}</Text>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function DevicesScreen() {
   const [data, setData] = useState<DevicesData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [workingDeviceId, setWorkingDeviceId] = useState<string | null>(null);
+  const [workingPolicyId, setWorkingPolicyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadDevices = useCallback(async (refreshing = false) => {
     try {
@@ -91,12 +152,13 @@ export function DevicesScreen() {
 
       setErrorMessage(null);
 
-      const [devices, deviceUsage] = await Promise.all([
+      const [devices, deviceUsage, policies] = await Promise.all([
         getMyDevices(50),
         getMyDeviceUsageList(50),
+        getMyDevicePolicies(50),
       ]);
 
-      setData({ devices, deviceUsage });
+      setData({ devices, deviceUsage, policies });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -123,6 +185,82 @@ export function DevicesScreen() {
     return map;
   }, [data?.deviceUsage]);
 
+  const policiesByDeviceId = useMemo(() => {
+    const map = new Map<string, MyDevicePolicy[]>();
+
+    for (const policy of data?.policies ?? []) {
+      const current = map.get(policy.device_id) ?? [];
+      current.push(policy);
+      map.set(policy.device_id, current);
+    }
+
+    return map;
+  }, [data?.policies]);
+
+  async function createAndAddPolicy(
+    deviceId: string,
+    createPolicy: (deviceId: string) => Promise<MyDevicePolicy>,
+    successText: string
+  ) {
+    try {
+      setWorkingDeviceId(deviceId);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const policy = await createPolicy(deviceId);
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          policies: [policy, ...current.policies],
+        };
+      });
+
+      setSuccessMessage(successText);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not create device policy."
+      );
+    } finally {
+      setWorkingDeviceId(null);
+    }
+  }
+
+  async function handleExecutePolicy(policyId: string) {
+    try {
+      setWorkingPolicyId(policyId);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const execution = await executeMyDevicePolicy(policyId);
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          policies: current.policies.map((policy) =>
+            policy.id === execution.policy.id ? execution.policy : policy
+          ),
+        };
+      });
+
+      setSuccessMessage(execution.message);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not execute policy."
+      );
+    } finally {
+      setWorkingPolicyId(null);
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <View style={styles.centered}>
@@ -145,13 +283,20 @@ export function DevicesScreen() {
       <Text style={styles.eyebrow}>Devices</Text>
       <Text style={styles.title}>Connected devices</Text>
       <Text style={styles.subtitle}>
-        View your known devices and their usage totals.
+        View your devices, usage totals, and demo router policies.
       </Text>
 
       {errorMessage ? (
         <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Could not refresh devices</Text>
+          <Text style={styles.errorTitle}>Device action failed</Text>
           <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
+      {successMessage ? (
+        <View style={styles.successCard}>
+          <Text style={styles.successTitle}>Action completed</Text>
+          <Text style={styles.successText}>{successMessage}</Text>
         </View>
       ) : null}
 
@@ -167,6 +312,11 @@ export function DevicesScreen() {
         {data?.devices.length ? (
           data.devices.map((device) => {
             const usage = usageByDeviceId.get(device.id)?.usage;
+            const policies = policiesByDeviceId.get(device.id) ?? [];
+            const pendingPolicies = policies.filter(
+              (policy) => policy.status === "pending"
+            );
+            const isWorkingOnDevice = workingDeviceId === device.id;
 
             return (
               <View key={device.id} style={styles.deviceRow}>
@@ -215,6 +365,77 @@ export function DevicesScreen() {
                 </View>
 
                 <DeviceUsageSummary usage={usage} />
+
+                <View style={styles.actionGrid}>
+                  <Pressable
+                    disabled={isWorkingOnDevice}
+                    style={[
+                      styles.secondaryButton,
+                      isWorkingOnDevice && styles.buttonDisabled,
+                    ]}
+                    onPress={() =>
+                      void createAndAddPolicy(
+                        device.id,
+                        (targetDeviceId) =>
+                          createBandwidthLimitPolicy(targetDeviceId, 10),
+                        "Bandwidth limit policy created. Execute it to apply."
+                      )
+                    }
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      {isWorkingOnDevice ? "Working..." : "Limit 10 Mbps"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    disabled={isWorkingOnDevice}
+                    style={[
+                      styles.secondaryButton,
+                      isWorkingOnDevice && styles.buttonDisabled,
+                    ]}
+                    onPress={() =>
+                      void createAndAddPolicy(
+                        device.id,
+                        (targetDeviceId) =>
+                          createDevicePriorityPolicy(targetDeviceId, 8),
+                        "Priority policy created. Execute it to apply."
+                      )
+                    }
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      {isWorkingOnDevice ? "Working..." : "High priority"}
+                    </Text>
+                  </Pressable>
+                </View>
+
+                {pendingPolicies.length ? (
+                  <View style={styles.pendingBox}>
+                    <Text style={styles.policyTitle}>Pending policy actions</Text>
+                    {pendingPolicies.map((policy) => {
+                      const isExecuting = workingPolicyId === policy.id;
+
+                      return (
+                        <Pressable
+                          key={policy.id}
+                          disabled={isExecuting}
+                          style={[
+                            styles.primaryButton,
+                            isExecuting && styles.buttonDisabled,
+                          ]}
+                          onPress={() => void handleExecutePolicy(policy.id)}
+                        >
+                          <Text style={styles.primaryButtonText}>
+                            {isExecuting
+                              ? "Executing..."
+                              : `Execute ${formatLabel(policy.policy_type)}`}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ) : null}
+
+                <DevicePolicies policies={policies} />
               </View>
             );
           })
@@ -287,6 +508,23 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     color: "#8A2E1B",
+  },
+  successCard: {
+    borderRadius: 18,
+    padding: 16,
+    gap: 6,
+    backgroundColor: "#E9F8EF",
+    borderWidth: 1,
+    borderColor: "#BFECCF",
+  },
+  successTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#0B6B3A",
+  },
+  successText: {
+    fontSize: 14,
+    color: "#0B6B3A",
   },
   cardLabel: {
     fontSize: 13,
@@ -368,6 +606,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
     color: "#102033",
+  },
+  actionGrid: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  primaryButton: {
+    alignItems: "center",
+    borderRadius: 14,
+    paddingVertical: 11,
+    backgroundColor: "#102033",
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  secondaryButton: {
+    flex: 1,
+    alignItems: "center",
+    borderRadius: 14,
+    paddingVertical: 11,
+    backgroundColor: "#EAF9FE",
+  },
+  secondaryButtonText: {
+    color: "#0B5D7A",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  pendingBox: {
+    gap: 8,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: "#F6F8FB",
+  },
+  policyList: {
+    gap: 8,
+  },
+  policyRow: {
+    borderRadius: 14,
+    padding: 12,
+    gap: 4,
+    backgroundColor: "#F6F8FB",
+  },
+  policyTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#102033",
+    textTransform: "capitalize",
+  },
+  failureText: {
+    fontSize: 12,
+    color: "#8A2E1B",
   },
   mutedText: {
     fontSize: 14,

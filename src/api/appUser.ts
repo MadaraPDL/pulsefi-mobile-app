@@ -3,6 +3,8 @@ import type {
   AppUserSummary,
   MyAlert,
   MyDevice,
+  MyDevicePolicy,
+  MyDevicePolicyExecution,
   MyDeviceUsage,
   MyPlanChangeRequest,
   MyPrediction,
@@ -69,6 +71,42 @@ export function createPlanChangeRequestFromRecommendation(
     {
       method: "POST",
       body: JSON.stringify({ reason }),
+    }
+  );
+}
+
+
+export function getMyDevicePolicies(limit = 50) {
+  return apiRequest<MyDevicePolicy[]>(`/me/device-policies?limit=${limit}`);
+}
+
+export function createBandwidthLimitPolicy(deviceId: string, bandwidthLimitMbps = 10) {
+  return apiRequest<MyDevicePolicy>("/me/device-policies", {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: deviceId,
+      policy_type: "bandwidth_limit",
+      bandwidth_limit_mbps: bandwidthLimitMbps,
+    }),
+  });
+}
+
+export function createDevicePriorityPolicy(deviceId: string, priorityLevel = 8) {
+  return apiRequest<MyDevicePolicy>("/me/device-policies", {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: deviceId,
+      policy_type: "device_priority",
+      priority_level: priorityLevel,
+    }),
+  });
+}
+
+export function executeMyDevicePolicy(policyId: string) {
+  return apiRequest<MyDevicePolicyExecution>(
+    `/me/device-policies/${policyId}/execute`,
+    {
+      method: "PATCH",
     }
   );
 }
