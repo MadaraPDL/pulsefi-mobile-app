@@ -753,35 +753,89 @@ export function DevicesScreen() {
                   </Pressable>
                 </View>
 
-                <View style={styles.actionGrid}>
+                <View
+                  style={[
+                    styles.limitBox,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.policyTitle,
+                        { color: colors.text, flex: 1 },
+                      ]}
+                    >
+                      Device priority
+                    </Text>
+
+                    <Pressable
+                      disabled={isWorkingOnDevice || !canApplyDevicePriority}
+                      style={[
+                        styles.secondaryButton,
+                        {
+                          alignSelf: "flex-start",
+                          paddingHorizontal: 12,
+                          paddingVertical: 9,
+                          minHeight: 38,
+                          backgroundColor: canApplyDevicePriority
+                            ? colors.primary
+                            : colors.surface,
+                          borderColor: canApplyDevicePriority
+                            ? colors.primary
+                            : colors.border,
+                        },
+                        (isWorkingOnDevice || !canApplyDevicePriority) &&
+                          styles.buttonDisabled,
+                      ]}
+                      onPress={() => void handleCreateHighPriority(device.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.secondaryButtonText,
+                          {
+                            fontSize: 12,
+                            color: canApplyDevicePriority
+                              ? colors.buttonText
+                              : colors.textSubtle,
+                          },
+                        ]}
+                      >
+                        {isWorkingOnDevice
+                          ? "Working..."
+                          : canApplyDevicePriority
+                            ? "High priority"
+                            : "Unavailable"}
+                      </Text>
+                    </Pressable>
+                  </View>
+
                   <Text
-                    style={
-                      canApplyDevicePriority ? styles.smallText : styles.failureText
-                    }
+                    style={[
+                      canApplyDevicePriority
+                        ? styles.smallText
+                        : styles.failureText,
+                      {
+                        color: canApplyDevicePriority
+                          ? colors.textSubtle
+                          : colors.dangerText,
+                      },
+                    ]}
                   >
                     {canApplyDevicePriority
                       ? "Router supports device priority actions."
                       : getCapabilityHelpText(routerCapabilities, "priority")}
                   </Text>
-
-                  <Pressable
-                    disabled={isWorkingOnDevice || !canApplyDevicePriority}
-                    style={[
-                      styles.secondaryButton,
-                      { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                      (isWorkingOnDevice || !canApplyDevicePriority) &&
-                        styles.buttonDisabled,
-                    ]}
-                    onPress={() => void handleCreateHighPriority(device.id)}
-                  >
-                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                      {isWorkingOnDevice
-                        ? "Working..."
-                        : canApplyDevicePriority
-                          ? "High priority"
-                          : "Priority not supported"}
-                    </Text>
-                  </Pressable>
                 </View>
 
                 {pendingPolicies.length ? (
