@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import {
   createBandwidthLimitPolicy,
   createDevicePriorityPolicy,
@@ -112,9 +114,11 @@ function getCapabilityHelpText(
 }
 
 function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
+  const { colors } = usePulseFiTheme();
+
   if (!usage) {
     return (
-      <Text style={styles.smallText}>
+      <Text style={[styles.smallText, { color: colors.textSubtle }]}>
         No usage totals found for this device yet.
       </Text>
     );
@@ -122,56 +126,58 @@ function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
 
   return (
     <View style={styles.usageGrid}>
-      <View style={styles.usageBox}>
-        <Text style={styles.metricLabel}>Total</Text>
-        <Text style={styles.metricValue}>{formatMb(usage.total_mb)}</Text>
+      <View style={[styles.usageBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+        <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Total</Text>
+        <Text style={[styles.metricValue, { color: colors.text }]}>{formatMb(usage.total_mb)}</Text>
       </View>
-      <View style={styles.usageBox}>
-        <Text style={styles.metricLabel}>Download</Text>
-        <Text style={styles.metricValue}>{formatMb(usage.download_mb)}</Text>
+      <View style={[styles.usageBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+        <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Download</Text>
+        <Text style={[styles.metricValue, { color: colors.text }]}>{formatMb(usage.download_mb)}</Text>
       </View>
-      <View style={styles.usageBox}>
-        <Text style={styles.metricLabel}>Upload</Text>
-        <Text style={styles.metricValue}>{formatMb(usage.upload_mb)}</Text>
+      <View style={[styles.usageBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+        <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Upload</Text>
+        <Text style={[styles.metricValue, { color: colors.text }]}>{formatMb(usage.upload_mb)}</Text>
       </View>
     </View>
   );
 }
 
 function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
+  const { colors } = usePulseFiTheme();
+
   if (!policies.length) {
-    return <Text style={styles.smallText}>No policies created for this device.</Text>;
+    return <Text style={[styles.smallText, { color: colors.textSubtle }]}>No policies created for this device.</Text>;
   }
 
   return (
     <View style={styles.policyList}>
       {policies.map((policy) => (
-        <View key={policy.id} style={styles.policyRow}>
-          <Text style={styles.policyTitle}>{formatLabel(policy.policy_type)}</Text>
-          <Text style={styles.smallText}>
+        <View key={policy.id} style={[styles.policyRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
+          <Text style={[styles.policyTitle, { color: colors.text }]}>{formatLabel(policy.policy_type)}</Text>
+          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
             Status: {formatLabel(policy.status)} · Active:{" "}
             {policy.is_active ? "Yes" : "No"}
           </Text>
 
           {policy.policy_type === "bandwidth_limit" ? (
             <>
-              <Text style={styles.smallText}>
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                 Download limit: {formatMbps(policy.download_limit_mbps)}
               </Text>
-              <Text style={styles.smallText}>
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                 Upload limit: {formatMbps(policy.upload_limit_mbps)}
               </Text>
             </>
           ) : null}
 
           {policy.policy_type === "device_priority" ? (
-            <Text style={styles.smallText}>
+            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
               Priority level: {policy.priority_level ?? "Not set"}
             </Text>
           ) : null}
 
           {policy.failure_reason ? (
-            <Text style={styles.failureText}>{policy.failure_reason}</Text>
+            <Text style={[styles.failureText, { color: colors.dangerText }]}>{policy.failure_reason}</Text>
           ) : null}
         </View>
       ))}
@@ -180,6 +186,7 @@ function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
 }
 
 export function DevicesScreen() {
+  const { colors } = usePulseFiTheme();
   const [data, setData] = useState<DevicesData | null>(null);
   const [limitDrafts, setLimitDrafts] = useState<Record<string, LimitDraft>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -417,52 +424,54 @@ export function DevicesScreen() {
 
   if (isLoading && !data) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading connected devices...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading connected devices...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
+          tintColor={colors.primary}
           onRefresh={() => void loadDevices(true)}
         />
       }
     >
-      <Text style={styles.eyebrow}>Devices</Text>
-      <Text style={styles.title}>Connected devices</Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>Devices</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Connected devices</Text>
+      <Text style={[styles.subtitle, { color: colors.textMuted }]}>
         View devices, usage totals, and custom download/upload router policies.
       </Text>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Device action failed</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Device action failed</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
       {successMessage ? (
-        <View style={styles.successCard}>
-          <Text style={styles.successTitle}>Action completed</Text>
-          <Text style={styles.successText}>{successMessage}</Text>
+        <View style={[styles.successCard, { backgroundColor: colors.successBackground, borderColor: colors.successBorder }]}>
+          <Text style={[styles.successTitle, { color: colors.successText }]}>Action completed</Text>
+          <Text style={[styles.successText, { color: colors.successText }]}>{successMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Overview</Text>
-        <Text style={styles.bigNumber}>{data?.devices.length ?? 0}</Text>
-        <Text style={styles.cardText}>known devices on your account</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Overview</Text>
+        <Text style={[styles.bigNumber, { color: colors.text }]}>{data?.devices.length ?? 0}</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>known devices on your account</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Device List</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Device List</Text>
 
         {data?.devices.length ? (
           data.devices.map((device) => {
@@ -483,21 +492,29 @@ export function DevicesScreen() {
               routerCapabilities?.can_apply_device_priority === true;
 
             return (
-              <View key={device.id} style={styles.deviceRow}>
+              <View key={device.id} style={[styles.deviceRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <View style={styles.deviceHeader}>
                   <View style={styles.deviceTitleGroup}>
-                    <Text style={styles.deviceTitle}>
+                    <Text style={[styles.deviceTitle, { color: colors.text }]}>
                       {getDeviceDisplayName(device)}
                     </Text>
-                    <Text style={styles.smallText}>{device.mac_address}</Text>
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>{device.mac_address}</Text>
                   </View>
 
                   <Text
                     style={[
                       styles.statusPill,
-                      device.is_trusted
-                        ? styles.trustedPill
-                        : styles.untrustedPill,
+                      {
+                        backgroundColor: device.is_trusted
+                          ? colors.successBackground
+                          : colors.dangerBackground,
+                        borderColor: device.is_trusted
+                          ? colors.successBorder
+                          : colors.dangerBorder,
+                        color: device.is_trusted
+                          ? colors.successText
+                          : colors.dangerText,
+                      },
                     ]}
                   >
                     {device.is_trusted ? "Trusted" : "Untrusted"}
@@ -505,30 +522,30 @@ export function DevicesScreen() {
                 </View>
 
                 <View style={styles.detailGrid}>
-                  <Text style={styles.cardText}>
-                    Status: <Text style={styles.boldText}>{device.status}</Text>
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                    Status: <Text style={[styles.boldText, { color: colors.textMuted }]}>{device.status}</Text>
                   </Text>
-                  <Text style={styles.cardText}>
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
                     IP:{" "}
-                    <Text style={styles.boldText}>
+                    <Text style={[styles.boldText, { color: colors.textMuted }]}>
                       {device.ip_address ?? "Unknown"}
                     </Text>
                   </Text>
-                  <Text style={styles.cardText}>
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
                     Type:{" "}
-                    <Text style={styles.boldText}>
+                    <Text style={[styles.boldText, { color: colors.textMuted }]}>
                       {device.device_type ?? "Unknown"}
                     </Text>
                   </Text>
-                  <Text style={styles.cardText}>
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
                     Last seen:{" "}
-                    <Text style={styles.boldText}>
+                    <Text style={[styles.boldText, { color: colors.textMuted }]}>
                       {formatDateTime(device.last_seen)}
                     </Text>
                   </Text>
-                  <Text style={styles.cardText}>
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
                     Router mode:{" "}
-                    <Text style={styles.boldText}>
+                    <Text style={[styles.boldText, { color: colors.textMuted }]}>
                       {getRouterModeLabel(routerCapabilities)}
                     </Text>
                   </Text>
@@ -536,9 +553,9 @@ export function DevicesScreen() {
 
                 <DeviceUsageSummary usage={usage} />
 
-                <View style={styles.limitBox}>
-                  <Text style={styles.policyTitle}>Custom bandwidth limit</Text>
-                  <Text style={styles.smallText}>
+                <View style={[styles.limitBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Text style={[styles.policyTitle, { color: colors.text }]}>Custom bandwidth limit</Text>
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     Set separate download and upload Mbps for this device.
                   </Text>
                   <Text
@@ -555,13 +572,13 @@ export function DevicesScreen() {
 
                   <View style={styles.inputGrid}>
                     <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Download Mbps</Text>
+                      <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Download Mbps</Text>
                       <TextInput
                         value={draft.downloadLimitMbps}
                         keyboardType="decimal-pad"
                         inputMode="decimal"
                         editable={canApplyBandwidthLimit}
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
                         placeholder="10"
                         onChangeText={(value) =>
                           updateLimitDraft(device.id, "downloadLimitMbps", value)
@@ -570,13 +587,13 @@ export function DevicesScreen() {
                     </View>
 
                     <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Upload Mbps</Text>
+                      <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Upload Mbps</Text>
                       <TextInput
                         value={draft.uploadLimitMbps}
                         keyboardType="decimal-pad"
                         inputMode="decimal"
                         editable={canApplyBandwidthLimit}
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text }]}
                         placeholder="2"
                         onChangeText={(value) =>
                           updateLimitDraft(device.id, "uploadLimitMbps", value)
@@ -589,12 +606,13 @@ export function DevicesScreen() {
                     disabled={isWorkingOnDevice || !canApplyBandwidthLimit}
                     style={[
                       styles.primaryButton,
+                      { backgroundColor: colors.primary },
                       (isWorkingOnDevice || !canApplyBandwidthLimit) &&
                         styles.buttonDisabled,
                     ]}
                     onPress={() => void handleCreateCustomLimit(device.id)}
                   >
-                    <Text style={styles.primaryButtonText}>
+                    <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
                       {isWorkingOnDevice
                         ? "Working..."
                         : canApplyBandwidthLimit
@@ -619,12 +637,13 @@ export function DevicesScreen() {
                     disabled={isWorkingOnDevice || !canApplyDevicePriority}
                     style={[
                       styles.secondaryButton,
+                      { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
                       (isWorkingOnDevice || !canApplyDevicePriority) &&
                         styles.buttonDisabled,
                     ]}
                     onPress={() => void handleCreateHighPriority(device.id)}
                   >
-                    <Text style={styles.secondaryButtonText}>
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
                       {isWorkingOnDevice
                         ? "Working..."
                         : canApplyDevicePriority
@@ -635,8 +654,8 @@ export function DevicesScreen() {
                 </View>
 
                 {pendingPolicies.length ? (
-                  <View style={styles.pendingBox}>
-                    <Text style={styles.policyTitle}>Pending policy actions</Text>
+                  <View style={[styles.pendingBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                    <Text style={[styles.policyTitle, { color: colors.text }]}>Pending policy actions</Text>
                     {pendingPolicies.map((policy) => {
                       const isExecuting = workingPolicyId === policy.id;
 
@@ -650,7 +669,7 @@ export function DevicesScreen() {
                           ]}
                           onPress={() => void handleExecutePolicy(policy.id)}
                         >
-                          <Text style={styles.primaryButtonText}>
+                          <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
                             {isExecuting
                               ? "Executing..."
                               : `Execute ${formatLabel(policy.policy_type)}`}
@@ -666,7 +685,7 @@ export function DevicesScreen() {
             );
           })
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No devices found yet. Run simulator device ingestion from the ISP
             Admin dashboard to generate demo device data.
           </Text>
@@ -795,6 +814,7 @@ const styles = StyleSheet.create({
   },
   statusPill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,

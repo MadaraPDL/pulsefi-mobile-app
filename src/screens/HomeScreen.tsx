@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import {
   getMySubscriptions,
   getMySummary,
@@ -54,6 +56,7 @@ function formatDate(value: string | null) {
 }
 
 export function HomeScreen() {
+  const { colors } = usePulseFiTheme();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -102,106 +105,108 @@ export function HomeScreen() {
 
   if (isLoading && !data) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading your PulseFi dashboard...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading your PulseFi dashboard...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
+          tintColor={colors.primary}
           onRefresh={() => void loadDashboard(true)}
         />
       }
     >
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>PulseFi Mobile</Text>
-        <Text style={styles.title}>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>PulseFi Mobile</Text>
+        <Text style={[styles.title, { color: colors.text }]}>
           Welcome{data?.summary.full_name ? `, ${data.summary.full_name}` : ""}
         </Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.subtitle, { color: colors.textMuted }]}>
           Monitor your subscription, usage, and internet status.
         </Text>
       </View>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Could not refresh dashboard</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Could not refresh dashboard</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Total Usage</Text>
-        <Text style={styles.bigNumber}>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Total Usage</Text>
+        <Text style={[styles.bigNumber, { color: colors.text }]}>
           {data ? formatMb(data.usageSummary.totals.total_mb) : "0 MB"}
         </Text>
 
         <View style={styles.metricRow}>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Download</Text>
-            <Text style={styles.metricValue}>
+          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Download</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
               {data ? formatMb(data.usageSummary.totals.download_mb) : "0 MB"}
             </Text>
           </View>
 
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Upload</Text>
-            <Text style={styles.metricValue}>
+          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Upload</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
               {data ? formatMb(data.usageSummary.totals.upload_mb) : "0 MB"}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.smallText}>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
           Records: {data?.usageSummary.totals.record_count ?? 0}
         </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Active Subscription</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Active Subscription</Text>
 
         {activeSubscription ? (
           <>
-            <Text style={styles.cardTitle}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>
               {activeSubscription.subscription_label ??
                 activeSubscription.plan.plan_name}
             </Text>
-            <Text style={styles.cardText}>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
               Plan: {activeSubscription.plan.plan_name}
             </Text>
-            <Text style={styles.cardText}>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
               Price: {formatMoney(activeSubscription.plan.monthly_price)}
             </Text>
-            <Text style={styles.cardText}>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
               Data limit: {toNumber(activeSubscription.plan.data_limit_gb)} GB
             </Text>
-            <Text style={styles.cardText}>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
               Ends: {formatDate(activeSubscription.end_date)}
             </Text>
           </>
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No active subscription was found for this account.
           </Text>
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Account</Text>
-        <Text style={styles.cardTitle}>{data?.summary.email ?? "Unknown"}</Text>
-        <Text style={styles.cardText}>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Account</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>{data?.summary.email ?? "Unknown"}</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           Status: {data?.summary.status ?? "unknown"}
         </Text>
-        <Text style={styles.cardText}>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           Active subscriptions: {data?.summary.active_subscriptions ?? 0}
         </Text>
-        <Text style={styles.cardText}>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           Total subscriptions: {data?.summary.total_subscriptions ?? 0}
         </Text>
       </View>

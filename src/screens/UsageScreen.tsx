@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import { getMyUsageRecords, getMyUsageSummary } from "../api/appUser";
 import type {
   DecimalLike,
@@ -40,6 +42,7 @@ function formatDateTime(value: string) {
 }
 
 export function UsageScreen() {
+  const { colors } = usePulseFiTheme();
   const [data, setData] = useState<UsageData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -79,91 +82,93 @@ export function UsageScreen() {
 
   if (isLoading && !data) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading usage data...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading usage data...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
+          tintColor={colors.primary}
           onRefresh={() => void loadUsage(true)}
         />
       }
     >
-      <Text style={styles.eyebrow}>Usage</Text>
-      <Text style={styles.title}>Usage history</Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>Usage</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Usage history</Text>
+      <Text style={[styles.subtitle, { color: colors.textMuted }]}>
         Track your total internet consumption and latest usage records.
       </Text>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Could not refresh usage</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Could not refresh usage</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Total Usage</Text>
-        <Text style={styles.bigNumber}>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Total Usage</Text>
+        <Text style={[styles.bigNumber, { color: colors.text }]}>
           {data ? formatMb(data.summary.totals.total_mb) : "0 MB"}
         </Text>
 
         <View style={styles.metricRow}>
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Download</Text>
-            <Text style={styles.metricValue}>
+          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Download</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
               {data ? formatMb(data.summary.totals.download_mb) : "0 MB"}
             </Text>
           </View>
 
-          <View style={styles.metricBox}>
-            <Text style={styles.metricLabel}>Upload</Text>
-            <Text style={styles.metricValue}>
+          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Upload</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
               {data ? formatMb(data.summary.totals.upload_mb) : "0 MB"}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.smallText}>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
           Records: {data?.summary.totals.record_count ?? 0}
         </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Latest Records</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Latest Records</Text>
 
         {data?.records.length ? (
           data.records.map((record) => (
-            <View key={record.id} style={styles.recordRow}>
+            <View key={record.id} style={[styles.recordRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
               <View style={styles.recordHeader}>
-                <Text style={styles.recordTitle}>
+                <Text style={[styles.recordTitle, { color: colors.text }]}>
                   {formatMb(record.total_mb)}
                 </Text>
-                <Text style={styles.recordSource}>
+                <Text style={[styles.recordSource, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.primary }]}>
                   {record.source ?? "unknown"}
                 </Text>
               </View>
 
-              <Text style={styles.cardText}>
+              <Text style={[styles.cardText, { color: colors.textMuted }]}>
                 Download: {formatMb(record.download_mb)} · Upload:{" "}
                 {formatMb(record.upload_mb)}
               </Text>
 
-              <Text style={styles.smallText}>
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                 {formatDateTime(record.record_start)} →{" "}
                 {formatDateTime(record.record_end)}
               </Text>
             </View>
           ))
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No usage records were found yet. Run simulator ingestion from the ISP
             Admin dashboard to generate demo usage data.
           </Text>
@@ -284,6 +289,7 @@ const styles = StyleSheet.create({
   },
   recordSource: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
     fontSize: 12,

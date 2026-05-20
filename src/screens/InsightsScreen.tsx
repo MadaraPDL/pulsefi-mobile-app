@@ -9,6 +9,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import {
   createPlanChangeRequestFromRecommendation,
   getMyPlanChangeRequests,
@@ -58,18 +60,33 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function getRiskStyle(riskLevel: string) {
+function getRiskStyle(
+  riskLevel: string,
+  colors: ReturnType<typeof usePulseFiTheme>["colors"]
+) {
   const normalized = riskLevel.toLowerCase();
 
   if (normalized === "high" || normalized === "critical") {
-    return styles.highRisk;
+    return {
+      color: colors.dangerText,
+      backgroundColor: colors.dangerBackground,
+      borderColor: colors.dangerBorder,
+    };
   }
 
   if (normalized === "medium" || normalized === "warning") {
-    return styles.mediumRisk;
+    return {
+      color: "#FFD66B",
+      backgroundColor: "#302511",
+      borderColor: "#6F5012",
+    };
   }
 
-  return styles.lowRisk;
+  return {
+    color: colors.successText,
+    backgroundColor: colors.successBackground,
+    borderColor: colors.successBorder,
+  };
 }
 
 function canRequestPlanChange(recommendation: MyRecommendation) {
@@ -85,6 +102,7 @@ function canRequestPlanChange(recommendation: MyRecommendation) {
 }
 
 export function InsightsScreen() {
+  const { colors } = usePulseFiTheme();
   const [data, setData] = useState<InsightsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -165,83 +183,85 @@ export function InsightsScreen() {
 
   if (isLoading && !data) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading insights...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading insights...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
+          tintColor={colors.primary}
           onRefresh={() => void loadInsights(true)}
         />
       }
     >
-      <Text style={styles.eyebrow}>Insights</Text>
-      <Text style={styles.title}>Predictions & recommendations</Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>Insights</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Predictions & recommendations</Text>
+      <Text style={[styles.subtitle, { color: colors.textMuted }]}>
         See predicted usage, risk level, recommendations, and plan change requests.
       </Text>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Action failed</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Action failed</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
       {successMessage ? (
-        <View style={styles.successCard}>
-          <Text style={styles.successTitle}>Request sent</Text>
-          <Text style={styles.successText}>{successMessage}</Text>
+        <View style={[styles.successCard, { backgroundColor: colors.successBackground, borderColor: colors.successBorder }]}>
+          <Text style={[styles.successTitle, { color: colors.successText }]}>Request sent</Text>
+          <Text style={[styles.successText, { color: colors.successText }]}>{successMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Predictions</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Predictions</Text>
 
         {data?.predictions.length ? (
           data.predictions.map((prediction) => (
-            <View key={prediction.id} style={styles.itemRow}>
+            <View key={prediction.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
               <View style={styles.itemHeader}>
                 <View style={styles.itemTitleGroup}>
-                  <Text style={styles.itemTitle}>
+                  <Text style={[styles.itemTitle, { color: colors.text }]}>
                     {formatGb(prediction.predicted_usage_gb)}
                   </Text>
-                  <Text style={styles.smallText}>
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     {formatDate(prediction.period_start)} →{" "}
                     {formatDate(prediction.period_end)}
                   </Text>
                 </View>
 
-                <Text style={[styles.pill, getRiskStyle(prediction.risk_level)]}>
+                <Text style={[styles.pill, getRiskStyle(prediction.risk_level, colors)]}>
                   {formatLabel(prediction.risk_level)}
                 </Text>
               </View>
 
-              <Text style={styles.cardText}>
+              <Text style={[styles.cardText, { color: colors.textMuted }]}>
                 Confidence: {formatPercent(prediction.confidence_score)}
               </Text>
-              <Text style={styles.smallText}>
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                 Model: {prediction.model_version ?? "Not specified"}
               </Text>
             </View>
           ))
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No predictions found yet. Run intelligence generation from the ISP
             Admin dashboard to create demo predictions.
           </Text>
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Recommendations</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Recommendations</Text>
 
         {data?.recommendations.length ? (
           data.recommendations.map((recommendation) => {
@@ -249,31 +269,31 @@ export function InsightsScreen() {
             const canRequest = canRequestPlanChange(recommendation);
 
             return (
-              <View key={recommendation.id} style={styles.itemRow}>
+              <View key={recommendation.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
                 <View style={styles.itemHeader}>
                   <View style={styles.itemTitleGroup}>
-                    <Text style={styles.itemTitle}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>
                       {formatLabel(recommendation.recommendation_type)}
                     </Text>
-                    <Text style={styles.smallText}>
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                       {formatDate(recommendation.created_at)}
                     </Text>
                   </View>
 
-                  <Text style={styles.statusPill}>
+                  <Text style={[styles.statusPill, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.primary }]}>
                     {formatLabel(recommendation.status)}
                   </Text>
                 </View>
 
-                <Text style={styles.cardText}>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
                   {recommendation.recommendation_text}
                 </Text>
 
                 {recommendation.reason ? (
-                  <Text style={styles.smallText}>Reason: {recommendation.reason}</Text>
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>Reason: {recommendation.reason}</Text>
                 ) : null}
 
-                <Text style={styles.smallText}>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                   Confidence: {formatPercent(recommendation.confidence_score)}
                 </Text>
 
@@ -282,11 +302,12 @@ export function InsightsScreen() {
                     disabled={isCreating}
                     style={[
                       styles.primaryButton,
+                      { backgroundColor: colors.primary },
                       isCreating && styles.primaryButtonDisabled,
                     ]}
                     onPress={() => void handleRequestPlanChange(recommendation.id)}
                   >
-                    <Text style={styles.primaryButtonText}>
+                    <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
                       {isCreating ? "Sending..." : "Request plan change"}
                     </Text>
                   </Pressable>
@@ -295,51 +316,51 @@ export function InsightsScreen() {
             );
           })
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No recommendations found yet. Recommendations will appear after
             predictions are generated.
           </Text>
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Plan Change Requests</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Plan Change Requests</Text>
 
         {data?.planChangeRequests.length ? (
           data.planChangeRequests.map((request) => (
-            <View key={request.id} style={styles.itemRow}>
+            <View key={request.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
               <View style={styles.itemHeader}>
                 <View style={styles.itemTitleGroup}>
-                  <Text style={styles.itemTitle}>
+                  <Text style={[styles.itemTitle, { color: colors.text }]}>
                     {formatLabel(request.request_type)}
                   </Text>
-                  <Text style={styles.smallText}>
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     Requested: {formatDateTime(request.requested_at)}
                   </Text>
                 </View>
 
-                <Text style={styles.statusPill}>
+                <Text style={[styles.statusPill, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.primary }]}>
                   {formatLabel(request.status)}
                 </Text>
               </View>
 
               {request.reason ? (
-                <Text style={styles.cardText}>{request.reason}</Text>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>{request.reason}</Text>
               ) : null}
 
               {request.admin_response ? (
-                <Text style={styles.smallText}>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                   ISP response: {request.admin_response}
                 </Text>
               ) : (
-                <Text style={styles.smallText}>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                   Waiting for ISP admin review.
                 </Text>
               )}
             </View>
           ))
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No plan change requests yet. You can create one from an eligible
             recommendation.
           </Text>
@@ -461,6 +482,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,
@@ -482,6 +504,7 @@ const styles = StyleSheet.create({
   },
   statusPill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,

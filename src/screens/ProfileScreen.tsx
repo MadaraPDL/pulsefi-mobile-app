@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { getCurrentAccount } from "../api/auth";
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession, CurrentAccount } from "../types/appUser";
 
 type ProfileScreenProps = {
@@ -30,6 +31,9 @@ function formatBoolean(value: boolean) {
 }
 
 export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
+  const { colors, mode, toggleMode } = usePulseFiTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [account, setAccount] = useState<CurrentAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -73,71 +77,97 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
 
   if (isLoading && !account) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading profile...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading profile...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void loadProfile(true)}
+          tintColor={colors.primary}
         />
       }
     >
-      <Text style={styles.eyebrow}>Profile</Text>
-      <Text style={styles.title}>My account</Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>Profile</Text>
+      <Text style={[styles.title, { color: colors.text }]}>My account</Text>
+      <Text style={[styles.subtitle, { color: colors.textMuted }]}>
         Live account details from the PulseFi backend.
       </Text>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Could not refresh profile</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Could not refresh profile</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Name</Text>
-        <Text style={styles.cardTitle}>{displayName}</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.themeRow}>
+          <View style={styles.themeTextGroup}>
+            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Theme</Text>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
+              {mode === "dark" ? "Dark mode" : "Light mode"}
+            </Text>
+          </View>
 
-        <Text style={styles.cardLabel}>Email</Text>
-        <Text style={styles.cardText}>{email}</Text>
+          <Pressable
+            style={styles.themeButton}
+            onPress={() => void toggleMode()}
+          >
+            <Text style={styles.themeButtonText}>
+              Switch to {mode === "dark" ? "Light" : "Dark"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
 
-        <Text style={styles.cardLabel}>Username</Text>
-        <Text style={styles.cardText}>{username ?? "Not set"}</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Name</Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>{displayName}</Text>
 
-        <Text style={styles.cardLabel}>Status</Text>
-        <Text style={styles.cardText}>{status}</Text>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Email</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>{email}</Text>
 
-        <Text style={styles.cardLabel}>Email verified</Text>
-        <Text style={styles.cardText}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Username</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>{username ?? "Not set"}</Text>
+
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Status</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>{status}</Text>
+
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Email verified</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           {formatDateTime(account?.email_verified_at ?? null)}
         </Text>
 
-        <Text style={styles.cardLabel}>MFA enabled</Text>
-        <Text style={styles.cardText}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>MFA enabled</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           {formatBoolean(account?.mfa_enabled ?? false)}
         </Text>
 
-        <Text style={styles.cardLabel}>MFA required</Text>
-        <Text style={styles.cardText}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>MFA required</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
           {formatBoolean(account?.mfa_required ?? false)}
         </Text>
 
-        <Text style={styles.cardLabel}>MFA method</Text>
-        <Text style={styles.cardText}>
-          {account?.mfa_enabled ? account.preferred_mfa_method ?? "Unknown" : "Not enabled"}
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>MFA method</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          {account?.mfa_enabled
+            ? account.preferred_mfa_method ?? "Unknown"
+            : "Not enabled"}
         </Text>
 
-        <Text style={styles.cardLabel}>Account ID</Text>
-        <Text style={styles.smallText}>{account?.account_id ?? session.account_id}</Text>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Account ID</Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          {account?.account_id ?? session.account_id}
+        </Text>
       </View>
 
       <Pressable style={styles.logoutButton} onPress={() => void onLogout()}>
@@ -149,100 +179,119 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
 
 export default ProfileScreen;
 
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 24,
-    backgroundColor: "#F6F8FB",
-  },
-  container: {
-    flexGrow: 1,
-    gap: 16,
-    padding: 20,
-    backgroundColor: "#F6F8FB",
-  },
-  eyebrow: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#00A7D8",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#102033",
-  },
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#5D6B7A",
-  },
-  card: {
-    borderRadius: 22,
-    padding: 18,
-    gap: 8,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E3EAF2",
-  },
-  errorCard: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 6,
-    backgroundColor: "#FFF3F0",
-    borderWidth: 1,
-    borderColor: "#FFD1C7",
-  },
-  errorTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#8A2E1B",
-  },
-  errorText: {
-    fontSize: 14,
-    color: "#8A2E1B",
-  },
-  cardLabel: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#617083",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#102033",
-  },
-  cardText: {
-    fontSize: 15,
-    color: "#33465B",
-  },
-  smallText: {
-    fontSize: 12,
-    color: "#6B7888",
-  },
-  mutedText: {
-    fontSize: 14,
-    color: "#6B7888",
-    textAlign: "center",
-  },
-  logoutButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    paddingVertical: 14,
-    backgroundColor: "#102033",
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-});
-
+function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
+  return StyleSheet.create({
+    centered: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+      padding: 24,
+      backgroundColor: colors.background,
+    },
+    container: {
+      flexGrow: 1,
+      gap: 16,
+      padding: 20,
+      backgroundColor: colors.background,
+    },
+    eyebrow: {
+      fontSize: 13,
+      fontWeight: "800",
+      color: colors.primary,
+      textTransform: "uppercase",
+      letterSpacing: 0.8,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: "900",
+      color: colors.text,
+    },
+    subtitle: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: colors.textMuted,
+    },
+    card: {
+      borderRadius: 22,
+      padding: 18,
+      gap: 8,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    themeRow: {
+      gap: 14,
+    },
+    themeTextGroup: {
+      gap: 4,
+    },
+    themeButton: {
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 16,
+      paddingVertical: 12,
+      backgroundColor: colors.primary,
+    },
+    themeButtonText: {
+      fontSize: 14,
+      fontWeight: "900",
+      color: colors.buttonText,
+    },
+    errorCard: {
+      borderRadius: 18,
+      padding: 16,
+      gap: 6,
+      backgroundColor: colors.dangerBackground,
+      borderWidth: 1,
+      borderColor: colors.dangerBorder,
+    },
+    errorTitle: {
+      fontSize: 15,
+      fontWeight: "900",
+      color: colors.dangerText,
+    },
+    errorText: {
+      fontSize: 14,
+      color: colors.dangerText,
+    },
+    cardLabel: {
+      marginTop: 8,
+      fontSize: 12,
+      fontWeight: "800",
+      color: colors.textMuted,
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+    },
+    cardTitle: {
+      fontSize: 20,
+      fontWeight: "900",
+      color: colors.text,
+    },
+    cardText: {
+      fontSize: 15,
+      color: colors.textMuted,
+    },
+    smallText: {
+      fontSize: 12,
+      color: colors.textSubtle,
+    },
+    mutedText: {
+      fontSize: 14,
+      color: colors.textSubtle,
+      textAlign: "center",
+    },
+    logoutButton: {
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 18,
+      paddingVertical: 14,
+      backgroundColor: colors.primaryStrong,
+    },
+    logoutText: {
+      fontSize: 16,
+      fontWeight: "900",
+      color: colors.buttonText,
+    },
+  });
+}

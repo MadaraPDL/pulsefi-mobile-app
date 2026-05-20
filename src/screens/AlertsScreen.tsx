@@ -9,6 +9,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import { getMyAlerts, markMyAlertAsRead } from "../api/appUser";
 import type { MyAlert } from "../types/appUser";
 
@@ -24,21 +26,37 @@ function isUnread(alert: MyAlert) {
   return alert.read_at === null && alert.status !== "read";
 }
 
-function getSeverityStyle(severity: string) {
+function getSeverityStyle(
+  severity: string,
+  colors: ReturnType<typeof usePulseFiTheme>["colors"]
+) {
   const normalized = severity.toLowerCase();
 
   if (normalized === "critical" || normalized === "high") {
-    return styles.highSeverity;
+    return {
+      color: colors.dangerText,
+      backgroundColor: colors.dangerBackground,
+      borderColor: colors.dangerBorder,
+    };
   }
 
   if (normalized === "medium" || normalized === "warning") {
-    return styles.mediumSeverity;
+    return {
+      color: "#FFD66B",
+      backgroundColor: "#302511",
+      borderColor: "#6F5012",
+    };
   }
 
-  return styles.lowSeverity;
+  return {
+    color: colors.successText,
+    backgroundColor: colors.successBackground,
+    borderColor: colors.successBorder,
+  };
 }
 
 export function AlertsScreen() {
+  const { colors } = usePulseFiTheme();
   const [alerts, setAlerts] = useState<MyAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -102,44 +120,46 @@ export function AlertsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator />
-        <Text style={styles.mutedText}>Loading alerts...</Text>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} />
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading alerts...</Text>
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
+          tintColor={colors.primary}
           onRefresh={() => void loadAlerts(true)}
         />
       }
     >
-      <Text style={styles.eyebrow}>Alerts</Text>
-      <Text style={styles.title}>Network alerts</Text>
-      <Text style={styles.subtitle}>
+      <Text style={[styles.eyebrow, { color: colors.primary }]}>Alerts</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Network alerts</Text>
+      <Text style={[styles.subtitle, { color: colors.textMuted }]}>
         Review high usage, device, prediction, and policy alerts.
       </Text>
 
       {errorMessage ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Alert action failed</Text>
-          <Text style={styles.errorText}>{errorMessage}</Text>
+        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Alert action failed</Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Overview</Text>
-        <Text style={styles.bigNumber}>{unreadCount}</Text>
-        <Text style={styles.cardText}>unread alerts</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Overview</Text>
+        <Text style={[styles.bigNumber, { color: colors.text }]}>{unreadCount}</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>unread alerts</Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Latest Alerts</Text>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Latest Alerts</Text>
 
         {alerts.length ? (
           alerts.map((alert) => {
@@ -147,28 +167,28 @@ export function AlertsScreen() {
             const isUpdating = updatingAlertId === alert.id;
 
             return (
-              <View key={alert.id} style={styles.alertRow}>
+              <View key={alert.id} style={[styles.alertRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
                 <View style={styles.alertHeader}>
                   <View style={styles.alertTitleGroup}>
-                    <Text style={styles.alertTitle}>{alert.title}</Text>
-                    <Text style={styles.smallText}>
+                    <Text style={[styles.alertTitle, { color: colors.text }]}>{alert.title}</Text>
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                       {formatDateTime(alert.created_at)}
                     </Text>
                   </View>
 
                   <Text
-                    style={[styles.severityPill, getSeverityStyle(alert.severity)]}
+                    style={[styles.severityPill, getSeverityStyle(alert.severity, colors)]}
                   >
                     {formatLabel(alert.severity)}
                   </Text>
                 </View>
 
-                <Text style={styles.cardText}>{alert.message}</Text>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>{alert.message}</Text>
 
                 <View style={styles.metaRow}>
-                  <Text style={styles.metaPill}>{formatLabel(alert.alert_type)}</Text>
-                  <Text style={styles.metaPill}>{formatLabel(alert.status)}</Text>
-                  {unread ? <Text style={styles.unreadPill}>Unread</Text> : null}
+                  <Text style={[styles.metaPill, { backgroundColor: colors.surfaceMuted, color: colors.textMuted, borderColor: colors.border }]}>{formatLabel(alert.alert_type)}</Text>
+                  <Text style={[styles.metaPill, { backgroundColor: colors.surfaceMuted, color: colors.textMuted, borderColor: colors.border }]}>{formatLabel(alert.status)}</Text>
+                  {unread ? <Text style={[styles.unreadPill, { backgroundColor: colors.surfaceMuted, color: colors.primary, borderColor: colors.border }]}>Unread</Text> : null}
                 </View>
 
                 {unread ? (
@@ -176,11 +196,12 @@ export function AlertsScreen() {
                     disabled={isUpdating}
                     style={[
                       styles.readButton,
+                      { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
                       isUpdating && styles.readButtonDisabled,
                     ]}
                     onPress={() => void handleMarkAsRead(alert.id)}
                   >
-                    <Text style={styles.readButtonText}>
+                    <Text style={[styles.readButtonText, { color: colors.buttonText }]}>
                       {isUpdating ? "Updating..." : "Mark as read"}
                     </Text>
                   </Pressable>
@@ -189,7 +210,7 @@ export function AlertsScreen() {
             );
           })
         ) : (
-          <Text style={styles.mutedText}>
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No alerts found yet. Alerts will appear after simulator ingestion or
             intelligence runs create usage/device events.
           </Text>
@@ -298,6 +319,7 @@ const styles = StyleSheet.create({
   },
   severityPill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,
@@ -324,6 +346,7 @@ const styles = StyleSheet.create({
   },
   metaPill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,
@@ -335,6 +358,7 @@ const styles = StyleSheet.create({
   },
   unreadPill: {
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
     fontSize: 12,

@@ -10,6 +10,8 @@ import {
   View,
 } from "react-native";
 
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+
 import { loginAppUser } from "../api/auth";
 import { saveSession } from "../auth/session";
 import type { AppUserSession } from "../types/appUser";
@@ -19,6 +21,7 @@ type LoginScreenProps = {
 };
 
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
+  const { colors } = usePulseFiTheme();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,12 +47,12 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: "padding", android: undefined })}
-      style={styles.container}
+      style={[styles.container, { backgroundColor: colors.background }]}
     >
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>PulseFi</Text>
-        <Text style={styles.title}>App User Login</Text>
-        <Text style={styles.subtitle}>
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>PulseFi</Text>
+        <Text style={[styles.title, { color: colors.text }]}>App User Login</Text>
+        <Text style={[styles.subtitle, { color: colors.textMuted }]}>
           Sign in with your App User email or username.
         </Text>
 
@@ -60,7 +63,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             autoCorrect={false}
             keyboardType="email-address"
             placeholder="user@example.com"
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
             value={identifier}
             onChangeText={setIdentifier}
           />
@@ -71,7 +74,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           <TextInput
             placeholder="Your password"
             secureTextEntry
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
             value={password}
             onChangeText={setPassword}
           />
@@ -79,7 +82,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
         {errorMessage ? (
           <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{errorMessage}</Text>
+            <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
           </View>
         ) : null}
 

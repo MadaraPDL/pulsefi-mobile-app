@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -10,6 +10,7 @@ import { clearSession, getSession, saveSession } from "./src/auth/session";
 import { AppTabs } from "./src/navigation/AppTabs";
 import type { RootStackParamList } from "./src/navigation/types";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { PulseFiThemeProvider, usePulseFiTheme } from "./src/theme/ThemeProvider";
 import type { AppUserSession, CurrentAccount } from "./src/types/appUser";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -29,7 +30,8 @@ function mergeSessionWithCurrentAccount(
   };
 }
 
-export default function App() {
+function PulseFiAppShell() {
+  const { colors, mode, navigationTheme } = usePulseFiTheme();
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [session, setSession] = useState<AppUserSession | null>(null);
 
@@ -80,9 +82,16 @@ export default function App() {
   if (isBootstrapping) {
     return (
       <SafeAreaProvider>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator />
-          <Text style={styles.loadingText}>Opening PulseFi...</Text>
+        <View
+          style={[
+            styles.loadingContainer,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+            Opening PulseFi...
+          </Text>
         </View>
       </SafeAreaProvider>
     );
@@ -90,8 +99,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <StatusBar style="dark" />
+      <NavigationContainer theme={navigationTheme}>
+        <StatusBar style={mode === "dark" ? "light" : "dark"} />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {session ? (
             <Stack.Screen name="App">
@@ -108,16 +117,22 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <PulseFiThemeProvider>
+      <PulseFiAppShell />
+    </PulseFiThemeProvider>
+  );
+}
+
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    backgroundColor: "#F6F8FB",
   },
   loadingText: {
     fontSize: 15,
-    color: "#5D6B7A",
   },
 });
