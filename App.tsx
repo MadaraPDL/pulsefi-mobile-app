@@ -5,13 +5,29 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-import { clearSession, getSession } from "./src/auth/session";
+import { getCurrentAccount } from "./src/api/auth";
+import { clearSession, getSession, saveSession } from "./src/auth/session";
 import { AppTabs } from "./src/navigation/AppTabs";
 import type { RootStackParamList } from "./src/navigation/types";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import type { AppUserSession } from "./src/types/appUser";
+import type { AppUserSession, CurrentAccount } from "./src/types/appUser";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function mergeSessionWithCurrentAccount(
+  session: AppUserSession,
+  current: CurrentAccount
+): AppUserSession {
+  return {
+    ...session,
+    account_type: "app_user",
+    account_id: current.account_id,
+    full_name: current.full_name,
+    email: current.email,
+    username: current.username,
+    role: current.role,
+  };
+}
 
 export default function App() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -21,7 +37,33 @@ export default function App() {
     async function restoreSession() {
       try {
         const savedSession = await getSession();
-        setSession(savedSession);
+
+        if (!savedSession) {
+          return;
+        }
+
+        const currentAccount = await getCurrentAccount();
+
+        if (currentAccount.account_type !== "app_user") {
+          await clearSession();
+          return;
+        }
+
+        if (currentAccount.status !== "active") {
+          await clearSession();
+          return;
+        }
+
+        const refreshedSession = mergeSessionWithCurrentAccount(
+          savedSession,
+          currentAccount
+        );
+
+        await saveSession(refreshedSession);
+        setSession(refreshedSession);
+      } catch {
+        await clearSession();
+        setSession(null);
       } finally {
         setIsBootstrapping(false);
       }

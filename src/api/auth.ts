@@ -1,5 +1,5 @@
 ﻿import { apiRequest } from "./client";
-import type { AppUserSession } from "../types/appUser";
+import type { AppUserSession, CurrentAccount } from "../types/appUser";
 
 type MfaLoginResponse = {
   mfa_required?: true;
@@ -35,4 +35,8 @@ export async function loginAppUser(
   }
 
   return response;
+}
+
+export function getCurrentAccount() {
+  return apiRequest<CurrentAccount>("/auth/me");
 }

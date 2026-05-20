@@ -11,6 +11,20 @@ export type AppUserSession = {
   role?: string | null;
 };
 
+export type CurrentAccount = {
+  account_type: "admin" | "app_user";
+  account_id: string;
+  full_name: string;
+  email: string;
+  username: string | null;
+  role: string | null;
+  status: string;
+  email_verified_at: string | null;
+  mfa_enabled: boolean;
+  mfa_required: boolean;
+  preferred_mfa_method: string | null;
+};
+
 export type AppUserSummary = {
   id: string;
   isp_id: string;
