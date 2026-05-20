@@ -11,7 +11,7 @@ import {
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 
-import { getMyAlerts, markMyAlertAsRead } from "../api/appUser";
+import { getMyAlert, getMyAlerts, markMyAlertAsRead } from "../api/appUser";
 import type { MyAlert } from "../types/appUser";
 
 function formatDateTime(value: string) {
@@ -61,6 +61,9 @@ export function AlertsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [updatingAlertId, setUpdatingAlertId] = useState<string | null>(null);
+  const [loadingAlertDetailId, setLoadingAlertDetailId] =
+    useState<string | null>(null);
+  const [selectedAlert, setSelectedAlert] = useState<MyAlert | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadAlerts = useCallback(async (refreshing = false) => {
@@ -95,6 +98,33 @@ export function AlertsScreen() {
     return alerts.filter(isUnread).length;
   }, [alerts]);
 
+  async function handleViewAlertDetail(alertId: string) {
+    if (selectedAlert?.id === alertId) {
+      setSelectedAlert(null);
+      return;
+    }
+
+    try {
+      setLoadingAlertDetailId(alertId);
+      setErrorMessage(null);
+
+      const detail = await getMyAlert(alertId);
+      setSelectedAlert(detail);
+
+      setAlerts((currentAlerts) =>
+        currentAlerts.map((alert) => (alert.id === detail.id ? detail : alert))
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load alert details."
+      );
+    } finally {
+      setLoadingAlertDetailId(null);
+    }
+  }
+
   async function handleMarkAsRead(alertId: string) {
     try {
       setUpdatingAlertId(alertId);
@@ -106,6 +136,10 @@ export function AlertsScreen() {
         currentAlerts.map((alert) =>
           alert.id === updatedAlert.id ? updatedAlert : alert
         )
+      );
+
+      setSelectedAlert((currentSelected) =>
+        currentSelected?.id === updatedAlert.id ? updatedAlert : currentSelected
       );
     } catch (error) {
       setErrorMessage(
@@ -165,6 +199,9 @@ export function AlertsScreen() {
           alerts.map((alert) => {
             const unread = isUnread(alert);
             const isUpdating = updatingAlertId === alert.id;
+            const isLoadingDetail = loadingAlertDetailId === alert.id;
+            const selected = selectedAlert?.id === alert.id;
+            const detailAlert = selectedAlert?.id === alert.id ? selectedAlert : alert;
 
             return (
               <View key={alert.id} style={[styles.alertRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
@@ -191,21 +228,121 @@ export function AlertsScreen() {
                   {unread ? <Text style={[styles.unreadPill, { backgroundColor: colors.surfaceMuted, color: colors.primary, borderColor: colors.border }]}>Unread</Text> : null}
                 </View>
 
-                {unread ? (
+                {selected ? (
+                  <View
+                    style={{
+                      borderRadius: 16,
+                      padding: 12,
+                      gap: 8,
+                      backgroundColor: colors.surface,
+                      borderWidth: 1,
+                      borderColor: colors.primary,
+                    }}
+                  >
+                    <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+                      Alert details
+                    </Text>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      Type:{" "}
+                      <Text style={{ color: colors.text, fontWeight: "900" }}>
+                        {formatLabel(detailAlert.alert_type)}
+                      </Text>
+                    </Text>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      Status:{" "}
+                      <Text style={{ color: colors.text, fontWeight: "900" }}>
+                        {formatLabel(detailAlert.status)}
+                      </Text>
+                    </Text>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      Severity:{" "}
+                      <Text style={{ color: colors.text, fontWeight: "900" }}>
+                        {formatLabel(detailAlert.severity)}
+                      </Text>
+                    </Text>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      Created:{" "}
+                      <Text style={{ color: colors.text, fontWeight: "900" }}>
+                        {formatDateTime(detailAlert.created_at)}
+                      </Text>
+                    </Text>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      Read:{" "}
+                      <Text style={{ color: colors.text, fontWeight: "900" }}>
+                        {detailAlert.read_at
+                          ? formatDateTime(detailAlert.read_at)
+                          : "Not read yet"}
+                      </Text>
+                    </Text>
+
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                      Related IDs: device {detailAlert.device_id ?? "none"} ? usage{" "}
+                      {detailAlert.usage_id ?? "none"} ? prediction{" "}
+                      {detailAlert.prediction_id ?? "none"}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 10,
+                  }}
+                >
                   <Pressable
-                    disabled={isUpdating}
+                    disabled={isLoadingDetail}
                     style={[
                       styles.readButton,
-                      { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                      isUpdating && styles.readButtonDisabled,
+                      {
+                        backgroundColor: selected
+                          ? colors.primary
+                          : colors.surface,
+                        borderColor: selected ? colors.primary : colors.border,
+                      },
+                      isLoadingDetail && styles.readButtonDisabled,
                     ]}
-                    onPress={() => void handleMarkAsRead(alert.id)}
+                    onPress={() => void handleViewAlertDetail(alert.id)}
                   >
-                    <Text style={[styles.readButtonText, { color: colors.buttonText }]}>
-                      {isUpdating ? "Updating..." : "Mark as read"}
+                    <Text
+                      style={[
+                        styles.readButtonText,
+                        {
+                          color: selected
+                            ? colors.buttonText
+                            : colors.text,
+                        },
+                      ]}
+                    >
+                      {isLoadingDetail
+                        ? "Loading..."
+                        : selected
+                          ? "Hide details"
+                          : "View details"}
                     </Text>
                   </Pressable>
-                ) : null}
+
+                  {unread ? (
+                    <Pressable
+                      disabled={isUpdating}
+                      style={[
+                        styles.readButton,
+                        { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                        isUpdating && styles.readButtonDisabled,
+                      ]}
+                      onPress={() => void handleMarkAsRead(alert.id)}
+                    >
+                      <Text style={[styles.readButtonText, { color: colors.text }]}>
+                        {isUpdating ? "Updating..." : "Mark as read"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             );
           })

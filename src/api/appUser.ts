@@ -68,6 +68,10 @@ export function getMyAlerts(limit = 50) {
   return apiRequest<MyAlert[]>(`/me/alerts?limit=${limit}`);
 }
 
+export function getMyAlert(alertId: string) {
+  return apiRequest<MyAlert>(`/me/alerts/${alertId}`);
+}
+
 export function markMyAlertAsRead(alertId: string) {
   return apiRequest<MyAlert>(`/me/alerts/${alertId}/read`, {
     method: "PATCH",
