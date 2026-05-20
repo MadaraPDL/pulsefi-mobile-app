@@ -4,6 +4,7 @@ import type {
   MyAlert,
   MyDevice,
   MyDeviceUsage,
+  MyPlanChangeRequest,
   MyPrediction,
   MyRecommendation,
   MySubscription,
@@ -51,4 +52,23 @@ export function getMyPredictions(limit = 20) {
 
 export function getMyRecommendations(limit = 20) {
   return apiRequest<MyRecommendation[]>(`/me/recommendations?limit=${limit}`);
+}
+
+export function getMyPlanChangeRequests(limit = 20) {
+  return apiRequest<MyPlanChangeRequest[]>(
+    `/me/plan-change-requests?limit=${limit}`
+  );
+}
+
+export function createPlanChangeRequestFromRecommendation(
+  recommendationId: string,
+  reason = "Requested from PulseFi mobile app recommendation."
+) {
+  return apiRequest<MyPlanChangeRequest>(
+    `/me/recommendations/${recommendationId}/plan-change-request`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }
+  );
 }

@@ -162,3 +162,19 @@ export type MyRecommendation = {
   status: string;
   created_at: string;
 };
+
+export type MyPlanChangeRequest = {
+  id: string;
+  user_subscription_id: string;
+  current_plan_id: string;
+  requested_plan_id: string;
+  recommendation_id: string | null;
+  request_type: string;
+  reason: string | null;
+  status: string;
+  requested_at: string;
+  reviewed_by_admin_id: string | null;
+  reviewed_at: string | null;
+  admin_response: string | null;
+  updated_at: string;
+};

@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,9 +9,15 @@ import {
   View,
 } from "react-native";
 
-import { getMyPredictions, getMyRecommendations } from "../api/appUser";
+import {
+  createPlanChangeRequestFromRecommendation,
+  getMyPlanChangeRequests,
+  getMyPredictions,
+  getMyRecommendations,
+} from "../api/appUser";
 import type {
   DecimalLike,
+  MyPlanChangeRequest,
   MyPrediction,
   MyRecommendation,
 } from "../types/appUser";
@@ -18,6 +25,7 @@ import type {
 type InsightsData = {
   predictions: MyPrediction[];
   recommendations: MyRecommendation[];
+  planChangeRequests: MyPlanChangeRequest[];
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -42,6 +50,10 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString();
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString();
+}
+
 function formatLabel(value: string) {
   return value.replaceAll("_", " ");
 }
@@ -60,11 +72,25 @@ function getRiskStyle(riskLevel: string) {
   return styles.lowRisk;
 }
 
+function canRequestPlanChange(recommendation: MyRecommendation) {
+  const type = recommendation.recommendation_type.toLowerCase();
+  const status = recommendation.status.toLowerCase();
+
+  return (
+    recommendation.recommendation_plan_id !== null &&
+    (type === "upgrade" || type === "downgrade") &&
+    status !== "accepted" &&
+    status !== "rejected"
+  );
+}
+
 export function InsightsScreen() {
   const [data, setData] = useState<InsightsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [creatingRequestId, setCreatingRequestId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const loadInsights = useCallback(async (refreshing = false) => {
     try {
@@ -76,12 +102,14 @@ export function InsightsScreen() {
 
       setErrorMessage(null);
 
-      const [predictions, recommendations] = await Promise.all([
-        getMyPredictions(20),
-        getMyRecommendations(20),
-      ]);
+      const [predictions, recommendations, planChangeRequests] =
+        await Promise.all([
+          getMyPredictions(20),
+          getMyRecommendations(20),
+          getMyPlanChangeRequests(20),
+        ]);
 
-      setData({ predictions, recommendations });
+      setData({ predictions, recommendations, planChangeRequests });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -97,6 +125,43 @@ export function InsightsScreen() {
   useEffect(() => {
     void loadInsights();
   }, [loadInsights]);
+
+  async function handleRequestPlanChange(recommendationId: string) {
+    try {
+      setCreatingRequestId(recommendationId);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const createdRequest =
+        await createPlanChangeRequestFromRecommendation(recommendationId);
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          planChangeRequests: [createdRequest, ...current.planChangeRequests],
+          recommendations: current.recommendations.map((recommendation) =>
+            recommendation.id === recommendationId
+              ? { ...recommendation, status: "accepted" }
+              : recommendation
+          ),
+        };
+      });
+
+      setSuccessMessage("Plan change request sent to your ISP admin.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not create plan change request."
+      );
+    } finally {
+      setCreatingRequestId(null);
+    }
+  }
 
   if (isLoading && !data) {
     return (
@@ -120,13 +185,20 @@ export function InsightsScreen() {
       <Text style={styles.eyebrow}>Insights</Text>
       <Text style={styles.title}>Predictions & recommendations</Text>
       <Text style={styles.subtitle}>
-        See predicted usage, risk level, and plan recommendations.
+        See predicted usage, risk level, recommendations, and plan change requests.
       </Text>
 
       {errorMessage ? (
         <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Could not refresh insights</Text>
+          <Text style={styles.errorTitle}>Action failed</Text>
           <Text style={styles.errorText}>{errorMessage}</Text>
+        </View>
+      ) : null}
+
+      {successMessage ? (
+        <View style={styles.successCard}>
+          <Text style={styles.successTitle}>Request sent</Text>
+          <Text style={styles.successText}>{successMessage}</Text>
         </View>
       ) : null}
 
@@ -172,40 +244,104 @@ export function InsightsScreen() {
         <Text style={styles.cardLabel}>Recommendations</Text>
 
         {data?.recommendations.length ? (
-          data.recommendations.map((recommendation) => (
-            <View key={recommendation.id} style={styles.itemRow}>
-              <View style={styles.itemHeader}>
-                <View style={styles.itemTitleGroup}>
-                  <Text style={styles.itemTitle}>
-                    {formatLabel(recommendation.recommendation_type)}
-                  </Text>
-                  <Text style={styles.smallText}>
-                    {formatDate(recommendation.created_at)}
+          data.recommendations.map((recommendation) => {
+            const isCreating = creatingRequestId === recommendation.id;
+            const canRequest = canRequestPlanChange(recommendation);
+
+            return (
+              <View key={recommendation.id} style={styles.itemRow}>
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemTitleGroup}>
+                    <Text style={styles.itemTitle}>
+                      {formatLabel(recommendation.recommendation_type)}
+                    </Text>
+                    <Text style={styles.smallText}>
+                      {formatDate(recommendation.created_at)}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.statusPill}>
+                    {formatLabel(recommendation.status)}
                   </Text>
                 </View>
 
-                <Text style={styles.statusPill}>
-                  {formatLabel(recommendation.status)}
+                <Text style={styles.cardText}>
+                  {recommendation.recommendation_text}
                 </Text>
+
+                {recommendation.reason ? (
+                  <Text style={styles.smallText}>Reason: {recommendation.reason}</Text>
+                ) : null}
+
+                <Text style={styles.smallText}>
+                  Confidence: {formatPercent(recommendation.confidence_score)}
+                </Text>
+
+                {canRequest ? (
+                  <Pressable
+                    disabled={isCreating}
+                    style={[
+                      styles.primaryButton,
+                      isCreating && styles.primaryButtonDisabled,
+                    ]}
+                    onPress={() => void handleRequestPlanChange(recommendation.id)}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      {isCreating ? "Sending..." : "Request plan change"}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
-
-              <Text style={styles.cardText}>
-                {recommendation.recommendation_text}
-              </Text>
-
-              {recommendation.reason ? (
-                <Text style={styles.smallText}>Reason: {recommendation.reason}</Text>
-              ) : null}
-
-              <Text style={styles.smallText}>
-                Confidence: {formatPercent(recommendation.confidence_score)}
-              </Text>
-            </View>
-          ))
+            );
+          })
         ) : (
           <Text style={styles.mutedText}>
             No recommendations found yet. Recommendations will appear after
             predictions are generated.
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Plan Change Requests</Text>
+
+        {data?.planChangeRequests.length ? (
+          data.planChangeRequests.map((request) => (
+            <View key={request.id} style={styles.itemRow}>
+              <View style={styles.itemHeader}>
+                <View style={styles.itemTitleGroup}>
+                  <Text style={styles.itemTitle}>
+                    {formatLabel(request.request_type)}
+                  </Text>
+                  <Text style={styles.smallText}>
+                    Requested: {formatDateTime(request.requested_at)}
+                  </Text>
+                </View>
+
+                <Text style={styles.statusPill}>
+                  {formatLabel(request.status)}
+                </Text>
+              </View>
+
+              {request.reason ? (
+                <Text style={styles.cardText}>{request.reason}</Text>
+              ) : null}
+
+              {request.admin_response ? (
+                <Text style={styles.smallText}>
+                  ISP response: {request.admin_response}
+                </Text>
+              ) : (
+                <Text style={styles.smallText}>
+                  Waiting for ISP admin review.
+                </Text>
+              )}
+            </View>
+          ))
+        ) : (
+          <Text style={styles.mutedText}>
+            No plan change requests yet. You can create one from an eligible
+            recommendation.
           </Text>
         )}
       </View>
@@ -272,6 +408,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#8A2E1B",
   },
+  successCard: {
+    borderRadius: 18,
+    padding: 16,
+    gap: 6,
+    backgroundColor: "#E9F8EF",
+    borderWidth: 1,
+    borderColor: "#BFECCF",
+  },
+  successTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#0B6B3A",
+  },
+  successText: {
+    fontSize: 14,
+    color: "#0B6B3A",
+  },
   cardLabel: {
     fontSize: 13,
     fontWeight: "800",
@@ -337,6 +490,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#EAF9FE",
     overflow: "hidden",
     textTransform: "capitalize",
+  },
+  primaryButton: {
+    alignItems: "center",
+    borderRadius: 14,
+    paddingVertical: 11,
+    backgroundColor: "#102033",
+  },
+  primaryButtonDisabled: {
+    opacity: 0.7,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
   },
   mutedText: {
     fontSize: 14,
