@@ -18,10 +18,12 @@ import {
   executeMyDevicePolicy,
   getMyDevice,
   getMyDevicePolicies,
+  getMyDevicePolicy,
   getMyDevices,
   getMyDeviceUsage,
   getMyDeviceUsageList,
   getMyRouterCapabilities,
+  updateMyDeviceTrust,
 } from "../api/appUser";
 import type {
   DecimalLike,
@@ -149,48 +151,159 @@ function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
   );
 }
 
-function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
+function DevicePolicies({
+  policies,
+  selectedPolicyDetail,
+  loadingPolicyDetailId,
+  onViewPolicyDetail,
+}: {
+  policies: MyDevicePolicy[];
+  selectedPolicyDetail: MyDevicePolicy | null;
+  loadingPolicyDetailId: string | null;
+  onViewPolicyDetail: (policyId: string) => void;
+}) {
   const { colors } = usePulseFiTheme();
 
   if (!policies.length) {
-    return <Text style={[styles.smallText, { color: colors.textSubtle }]}>No policies created for this device.</Text>;
+    return (
+      <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+        No policies created for this device.
+      </Text>
+    );
   }
 
   return (
     <View style={styles.policyList}>
-      {policies.map((policy) => (
-        <View key={policy.id} style={[styles.policyRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
-          <Text style={[styles.policyTitle, { color: colors.text }]}>{formatLabel(policy.policy_type)}</Text>
-          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-            Status: {formatLabel(policy.status)} · Active:{" "}
-            {policy.is_active ? "Yes" : "No"}
-          </Text>
+      {policies.map((policy) => {
+        const selected = selectedPolicyDetail?.id === policy.id;
+        const detailPolicy = selected ? selectedPolicyDetail : policy;
+        const isLoadingDetail = loadingPolicyDetailId === policy.id;
 
-          {policy.policy_type === "bandwidth_limit" ? (
-            <>
-              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                Download limit: {formatMbps(policy.download_limit_mbps)}
-              </Text>
-              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                Upload limit: {formatMbps(policy.upload_limit_mbps)}
-              </Text>
-            </>
-          ) : null}
-
-          {policy.policy_type === "device_priority" ? (
-            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              Priority level: {policy.priority_level ?? "Not set"}
+        return (
+          <View
+            key={policy.id}
+            style={[
+              styles.policyRow,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: selected ? colors.primary : colors.border,
+                borderTopColor: colors.border,
+                borderTopWidth: 0,
+                borderWidth: 1,
+                borderRadius: 18,
+                padding: 14,
+                marginTop: 10,
+              },
+            ]}
+          >
+            <Text style={[styles.policyTitle, { color: colors.text }]}>
+              {formatLabel(policy.policy_type)}
             </Text>
-          ) : null}
+            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+              Status: {formatLabel(policy.status)} ? Active:{" "}
+              {policy.is_active ? "Yes" : "No"}
+            </Text>
 
-          {policy.failure_reason ? (
-            <Text style={[styles.failureText, { color: colors.dangerText }]}>{policy.failure_reason}</Text>
-          ) : null}
-        </View>
-      ))}
+            {policy.policy_type === "bandwidth_limit" ? (
+              <>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                  Download limit: {formatMbps(policy.download_limit_mbps)}
+                </Text>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                  Upload limit: {formatMbps(policy.upload_limit_mbps)}
+                </Text>
+              </>
+            ) : null}
+
+            {policy.policy_type === "device_priority" ? (
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                Priority level: {policy.priority_level ?? "Not set"}
+              </Text>
+            ) : null}
+
+            {selected ? (
+              <View
+                style={{
+                  borderRadius: 16,
+                  padding: 12,
+                  gap: 6,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.primary,
+                }}
+              >
+                <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+                  Policy details
+                </Text>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                  Policy ID:{" "}
+                  <Text style={{ color: colors.text, fontWeight: "900" }}>
+                    {detailPolicy.id}
+                  </Text>
+                </Text>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                  Router ID:{" "}
+                  <Text style={{ color: colors.text, fontWeight: "900" }}>
+                    {detailPolicy.router_id}
+                  </Text>
+                </Text>
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                  Requested:{" "}
+                  <Text style={{ color: colors.text, fontWeight: "900" }}>
+                    {formatDateTime(detailPolicy.requested_at)}
+                  </Text>
+                </Text>
+                {detailPolicy.applied_at ? (
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                    Applied:{" "}
+                    <Text style={{ color: colors.text, fontWeight: "900" }}>
+                      {formatDateTime(detailPolicy.applied_at)}
+                    </Text>
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {policy.failure_reason ? (
+              <Text style={[styles.failureText, { color: colors.dangerText }]}>
+                {policy.failure_reason}
+              </Text>
+            ) : null}
+
+            <Pressable
+              disabled={isLoadingDetail}
+              style={[
+                styles.secondaryButton,
+                {
+                  backgroundColor: selected ? colors.primary : colors.surface,
+                  borderColor: selected ? colors.primary : colors.border,
+                },
+                isLoadingDetail && styles.buttonDisabled,
+              ]}
+              onPress={() => onViewPolicyDetail(policy.id)}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  {
+                    color: selected ? colors.buttonText : colors.text,
+                  },
+                ]}
+              >
+                {isLoadingDetail
+                  ? "Loading..."
+                  : selected
+                    ? "Hide policy details"
+                    : "View policy details"}
+              </Text>
+            </Pressable>
+          </View>
+        );
+      })}
     </View>
   );
 }
+
 
 export function DevicesScreen() {
   const { colors } = usePulseFiTheme();
@@ -204,6 +317,12 @@ export function DevicesScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [workingDeviceId, setWorkingDeviceId] = useState<string | null>(null);
   const [workingPolicyId, setWorkingPolicyId] = useState<string | null>(null);
+  const [trustUpdatingDeviceId, setTrustUpdatingDeviceId] =
+    useState<string | null>(null);
+  const [loadingPolicyDetailId, setLoadingPolicyDetailId] =
+    useState<string | null>(null);
+  const [selectedPolicyDetail, setSelectedPolicyDetail] =
+    useState<MyDevicePolicy | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -392,6 +511,93 @@ export function DevicesScreen() {
       );
     } finally {
       setLoadingDeviceDetailId(null);
+    }
+  }
+
+  async function handleUpdateDeviceTrust(device: MyDevice) {
+    try {
+      setTrustUpdatingDeviceId(device.id);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+
+      const updatedDevice = await updateMyDeviceTrust(
+        device.id,
+        !device.is_trusted
+      );
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          devices: current.devices.map((item) =>
+            item.id === updatedDevice.id ? updatedDevice : item
+          ),
+          deviceUsage: current.deviceUsage.map((item) =>
+            item.id === updatedDevice.id
+              ? { ...item, is_trusted: updatedDevice.is_trusted }
+              : item
+          ),
+        };
+      });
+
+      setSelectedDeviceDetail((currentDetail) =>
+        currentDetail?.device.id === updatedDevice.id
+          ? { ...currentDetail, device: updatedDevice }
+          : currentDetail
+      );
+
+      setSuccessMessage(
+        updatedDevice.is_trusted
+          ? "Device marked as trusted."
+          : "Device marked as untrusted."
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not update device trust state."
+      );
+    } finally {
+      setTrustUpdatingDeviceId(null);
+    }
+  }
+
+  async function handleViewPolicyDetail(policyId: string) {
+    if (selectedPolicyDetail?.id === policyId) {
+      setSelectedPolicyDetail(null);
+      return;
+    }
+
+    try {
+      setLoadingPolicyDetailId(policyId);
+      setErrorMessage(null);
+
+      const detail = await getMyDevicePolicy(policyId);
+      setSelectedPolicyDetail(detail);
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          policies: current.policies.map((policy) =>
+            policy.id === detail.id ? detail : policy
+          ),
+        };
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load policy details."
+      );
+    } finally {
+      setLoadingPolicyDetailId(null);
     }
   }
 
@@ -612,6 +818,41 @@ export function DevicesScreen() {
                     </Text>
                   </Text>
                 </View>
+
+                <Pressable
+                  disabled={trustUpdatingDeviceId === device.id}
+                  style={[
+                    styles.secondaryButton,
+                    {
+                      backgroundColor: device.is_trusted
+                        ? colors.surfaceMuted
+                        : colors.primary,
+                      borderColor: device.is_trusted
+                        ? colors.border
+                        : colors.primary,
+                    },
+                    trustUpdatingDeviceId === device.id &&
+                      styles.buttonDisabled,
+                  ]}
+                  onPress={() => void handleUpdateDeviceTrust(device)}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      {
+                        color: device.is_trusted
+                          ? colors.text
+                          : colors.buttonText,
+                      },
+                    ]}
+                  >
+                    {trustUpdatingDeviceId === device.id
+                      ? "Updating..."
+                      : device.is_trusted
+                        ? "Mark untrusted"
+                        : "Trust device"}
+                  </Text>
+                </Pressable>
 
                 <Pressable
                   disabled={isLoadingDeviceDetail}
@@ -865,7 +1106,12 @@ export function DevicesScreen() {
                   </View>
                 ) : null}
 
-                <DevicePolicies policies={policies} />
+                <DevicePolicies
+                  policies={policies}
+                  selectedPolicyDetail={selectedPolicyDetail}
+                  loadingPolicyDetailId={loadingPolicyDetailId}
+                  onViewPolicyDetail={handleViewPolicyDetail}
+                />
               </View>
             );
           })

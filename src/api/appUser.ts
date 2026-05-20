@@ -44,6 +44,13 @@ export function getMyDevice(deviceId: string) {
   return apiRequest<MyDevice>(`/me/devices/${deviceId}`);
 }
 
+export function updateMyDeviceTrust(deviceId: string, isTrusted: boolean) {
+  return apiRequest<MyDevice>(`/me/devices/${deviceId}/trust`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_trusted: isTrusted }),
+  });
+}
+
 export function getMyRouters() {
   return apiRequest<MyRouter[]>("/me/routers");
 }
@@ -120,6 +127,10 @@ export function createPlanChangeRequestFromRecommendation(
 
 export function getMyDevicePolicies(limit = 50) {
   return apiRequest<MyDevicePolicy[]>(`/me/device-policies?limit=${limit}`);
+}
+
+export function getMyDevicePolicy(policyId: string) {
+  return apiRequest<MyDevicePolicy>(`/me/device-policies/${policyId}`);
 }
 
 export function createBandwidthLimitPolicy(
