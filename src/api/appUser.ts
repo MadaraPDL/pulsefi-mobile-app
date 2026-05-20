@@ -1,6 +1,8 @@
 ﻿import { apiRequest } from "./client";
 import type {
   AppUserSummary,
+  MyDevice,
+  MyDeviceUsage,
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
@@ -20,4 +22,12 @@ export function getMyUsageSummary() {
 
 export function getMyUsageRecords(limit = 20) {
   return apiRequest<MyUsageRecord[]>(`/me/usage/records?limit=${limit}`);
+}
+
+export function getMyDevices(limit = 50) {
+  return apiRequest<MyDevice[]>(`/me/devices?limit=${limit}`);
+}
+
+export function getMyDeviceUsageList(limit = 50) {
+  return apiRequest<MyDeviceUsage[]>(`/me/usage/devices?limit=${limit}`);
 }

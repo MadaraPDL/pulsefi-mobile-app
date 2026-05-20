@@ -75,3 +75,32 @@ export type MyUsageRecord = {
   source: string | null;
   created_at: string;
 };
+
+export type MyDevice = {
+  id: string;
+  router_id: string;
+  device_name: string | null;
+  mac_address: string;
+  ip_address: string | null;
+  device_type: string | null;
+  is_trusted: boolean;
+  status: string;
+  first_seen: string;
+  last_seen: string | null;
+  updated_at: string;
+};
+
+export type MyDeviceUsage = {
+  id: string;
+  router_id: string;
+  device_name: string | null;
+  mac_address: string;
+  ip_address: string | null;
+  device_type: string | null;
+  is_trusted: boolean;
+  status: string;
+  first_seen: string;
+  last_seen: string | null;
+  updated_at: string;
+  usage: MyUsageTotals;
+};
