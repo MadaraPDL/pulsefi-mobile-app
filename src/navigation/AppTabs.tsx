@@ -1,4 +1,4 @@
-﻿import type { ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,9 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AlertsScreen } from "../screens/AlertsScreen";
 import { DevicesScreen } from "../screens/DevicesScreen";
 import { HomeScreen } from "../screens/HomeScreen";
-import { InsightsScreen } from "../screens/InsightsScreen";
-import { ProfileScreen } from "../screens/ProfileScreen";
-import { SubscriptionsScreen } from "../screens/SubscriptionsScreen";
+import { MoreScreen } from "../screens/MoreScreen";
 import { UsageScreen } from "../screens/UsageScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
@@ -26,10 +24,6 @@ const tabIcons: Record<
     focused: "home",
     unfocused: "home-outline",
   },
-  Subscriptions: {
-    focused: "card",
-    unfocused: "card-outline",
-  },
   Usage: {
     focused: "stats-chart",
     unfocused: "stats-chart-outline",
@@ -42,13 +36,9 @@ const tabIcons: Record<
     focused: "notifications",
     unfocused: "notifications-outline",
   },
-  Insights: {
-    focused: "bulb",
-    unfocused: "bulb-outline",
-  },
-  Profile: {
-    focused: "person-circle",
-    unfocused: "person-circle-outline",
+  More: {
+    focused: "grid",
+    unfocused: "grid-outline",
   },
 };
 
@@ -104,20 +94,11 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen
-        name="Subscriptions"
-        component={SubscriptionsScreen}
-        options={{
-          tabBarLabel: "Plans",
-          title: "Subscriptions",
-        }}
-      />
       <Tab.Screen name="Usage" component={UsageScreen} />
       <Tab.Screen name="Devices" component={DevicesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
-      <Tab.Screen name="Insights" component={InsightsScreen} />
-      <Tab.Screen name="Profile">
-        {() => <ProfileScreen session={session} onLogout={onLogout} />}
+      <Tab.Screen name="More">
+        {() => <MoreScreen session={session} onLogout={onLogout} />}
       </Tab.Screen>
     </Tab.Navigator>
   );
