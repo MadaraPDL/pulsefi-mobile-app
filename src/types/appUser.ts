@@ -1,4 +1,4 @@
-export type DecimalLike = number | string;
+﻿export type DecimalLike = number | string;
 
 export type AppUserSession = {
   access_token: string;
@@ -101,6 +101,16 @@ export type MyDevice = {
   status: string;
   first_seen: string;
   last_seen: string | null;
+  updated_at: string;
+};
+
+export type MyRouter = {
+  id: string;
+  user_subscription_id: string | null;
+  router_name: string | null;
+  router_model: string | null;
+  status: string;
+  created_at: string;
   updated_at: string;
 };
 

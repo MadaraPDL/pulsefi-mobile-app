@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -10,11 +10,12 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { InsightsScreen } from "./InsightsScreen";
 import { ProfileScreen } from "./ProfileScreen";
+import { RoutersScreen } from "./RoutersScreen";
 import { SubscriptionsScreen } from "./SubscriptionsScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
 
-type MoreSection = "plans" | "insights" | "profile";
+type MoreSection = "plans" | "routers" | "insights" | "profile";
 
 type MoreScreenProps = {
   session: AppUserSession;
@@ -32,6 +33,12 @@ const sections: Array<{
     title: "Plans",
     subtitle: "Subscriptions and plan details",
     icon: "card-outline",
+  },
+  {
+    key: "routers",
+    title: "Routers",
+    subtitle: "Router modes and capabilities",
+    icon: "wifi-outline",
   },
   {
     key: "insights",
@@ -60,6 +67,18 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
           onChangeSection={setActiveSection}
         />
         <SubscriptionsScreen />
+      </View>
+    );
+  }
+
+  if (activeSection === "routers") {
+    return (
+      <View style={styles.screen}>
+        <MoreHeader
+          activeSection={activeSection}
+          onChangeSection={setActiveSection}
+        />
+        <RoutersScreen />
       </View>
     );
   }
