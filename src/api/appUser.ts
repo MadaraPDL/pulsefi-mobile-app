@@ -40,6 +40,10 @@ export function getMyDevices(limit = 50) {
   return apiRequest<MyDevice[]>(`/me/devices?limit=${limit}`);
 }
 
+export function getMyDevice(deviceId: string) {
+  return apiRequest<MyDevice>(`/me/devices/${deviceId}`);
+}
+
 export function getMyRouters() {
   return apiRequest<MyRouter[]>("/me/routers");
 }
@@ -54,6 +58,10 @@ export function getMyRouterCapabilities(routerId: string) {
 
 export function getMyDeviceUsageList(limit = 50) {
   return apiRequest<MyDeviceUsage[]>(`/me/usage/devices?limit=${limit}`);
+}
+
+export function getMyDeviceUsage(deviceId: string) {
+  return apiRequest<MyDeviceUsage>(`/me/usage/devices/${deviceId}`);
 }
 
 export function getMyAlerts(limit = 50) {

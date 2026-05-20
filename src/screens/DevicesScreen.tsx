@@ -16,8 +16,10 @@ import {
   createBandwidthLimitPolicy,
   createDevicePriorityPolicy,
   executeMyDevicePolicy,
+  getMyDevice,
   getMyDevicePolicies,
   getMyDevices,
+  getMyDeviceUsage,
   getMyDeviceUsageList,
   getMyRouterCapabilities,
 } from "../api/appUser";
@@ -40,6 +42,11 @@ type DevicesData = {
 type LimitDraft = {
   downloadLimitMbps: string;
   uploadLimitMbps: string;
+};
+
+type DeviceDetail = {
+  device: MyDevice;
+  usage: MyDeviceUsage | null;
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -188,6 +195,10 @@ function DevicePolicies({ policies }: { policies: MyDevicePolicy[] }) {
 export function DevicesScreen() {
   const { colors } = usePulseFiTheme();
   const [data, setData] = useState<DevicesData | null>(null);
+  const [selectedDeviceDetail, setSelectedDeviceDetail] =
+    useState<DeviceDetail | null>(null);
+  const [loadingDeviceDetailId, setLoadingDeviceDetailId] =
+    useState<string | null>(null);
   const [limitDrafts, setLimitDrafts] = useState<Record<string, LimitDraft>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -335,6 +346,52 @@ export function DevicesScreen() {
       );
     } finally {
       setWorkingDeviceId(null);
+    }
+  }
+
+  async function handleViewDeviceDetail(deviceId: string) {
+    if (selectedDeviceDetail?.device.id === deviceId) {
+      setSelectedDeviceDetail(null);
+      return;
+    }
+
+    try {
+      setLoadingDeviceDetailId(deviceId);
+      setErrorMessage(null);
+
+      const [device, usage] = await Promise.all([
+        getMyDevice(deviceId),
+        getMyDeviceUsage(deviceId).catch(() => null),
+      ]);
+
+      setSelectedDeviceDetail({ device, usage });
+
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          devices: current.devices.map((item) =>
+            item.id === device.id ? device : item
+          ),
+          deviceUsage: usage
+            ? [
+                usage,
+                ...current.deviceUsage.filter((item) => item.id !== usage.id),
+              ]
+            : current.deviceUsage,
+        };
+      });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not load device details."
+      );
+    } finally {
+      setLoadingDeviceDetailId(null);
     }
   }
 
@@ -490,6 +547,11 @@ export function DevicesScreen() {
               routerCapabilities?.can_apply_bandwidth_limit === true;
             const canApplyDevicePriority =
               routerCapabilities?.can_apply_device_priority === true;
+            const selectedDetail =
+              selectedDeviceDetail?.device.id === device.id
+                ? selectedDeviceDetail
+                : null;
+            const isLoadingDeviceDetail = loadingDeviceDetailId === device.id;
 
             return (
               <View key={device.id} style={[styles.deviceRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -550,6 +612,75 @@ export function DevicesScreen() {
                     </Text>
                   </Text>
                 </View>
+
+                <Pressable
+                  disabled={isLoadingDeviceDetail}
+                  style={[
+                    styles.secondaryButton,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                    isLoadingDeviceDetail && styles.buttonDisabled,
+                  ]}
+                  onPress={() => void handleViewDeviceDetail(device.id)}
+                >
+                  <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                    {isLoadingDeviceDetail
+                      ? "Loading details..."
+                      : selectedDetail
+                        ? "Hide details"
+                        : "View details"}
+                  </Text>
+                </Pressable>
+
+                {selectedDetail ? (
+                  <View
+                    style={[
+                      styles.limitBox,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.primary,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.policyTitle, { color: colors.text }]}>
+                      Device details
+                    </Text>
+
+                    <View style={styles.detailGrid}>
+                      <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                        Name:{" "}
+                        <Text style={[styles.boldText, { color: colors.text }]}>
+                          {getDeviceDisplayName(selectedDetail.device)}
+                        </Text>
+                      </Text>
+                      <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                        MAC:{" "}
+                        <Text style={[styles.boldText, { color: colors.text }]}>
+                          {selectedDetail.device.mac_address}
+                        </Text>
+                      </Text>
+                      <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                        First seen:{" "}
+                        <Text style={[styles.boldText, { color: colors.text }]}>
+                          {formatDateTime(selectedDetail.device.first_seen)}
+                        </Text>
+                      </Text>
+                      <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                        Updated:{" "}
+                        <Text style={[styles.boldText, { color: colors.text }]}>
+                          {formatDateTime(selectedDetail.device.updated_at)}
+                        </Text>
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+                      Detail usage totals
+                    </Text>
+                    <DeviceUsageSummary usage={selectedDetail.usage?.usage} />
+                  </View>
+                ) : null}
 
                 <DeviceUsageSummary usage={usage} />
 
