@@ -8,5 +8,6 @@ export type AppTabParamList = {
   Usage: undefined;
   Devices: undefined;
   Alerts: undefined;
+  Insights: undefined;
   Profile: undefined;
 };

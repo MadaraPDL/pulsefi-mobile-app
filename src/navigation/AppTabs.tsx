@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AlertsScreen } from "../screens/AlertsScreen";
 import { DevicesScreen } from "../screens/DevicesScreen";
 import { HomeScreen } from "../screens/HomeScreen";
+import { InsightsScreen } from "../screens/InsightsScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { UsageScreen } from "../screens/UsageScreen";
 import type { AppUserSession } from "../types/appUser";
@@ -32,12 +33,12 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           borderTopColor: "#E3EAF2",
-          height: 58 + bottomPadding,
+          height: 60 + bottomPadding,
           paddingTop: 8,
           paddingBottom: bottomPadding,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: "800",
         },
       }}
@@ -46,6 +47,7 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
       <Tab.Screen name="Usage" component={UsageScreen} />
       <Tab.Screen name="Devices" component={DevicesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
+      <Tab.Screen name="Insights" component={InsightsScreen} />
       <Tab.Screen name="Profile">
         {() => <ProfileScreen session={session} onLogout={onLogout} />}
       </Tab.Screen>

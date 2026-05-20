@@ -4,6 +4,8 @@ import type {
   MyAlert,
   MyDevice,
   MyDeviceUsage,
+  MyPrediction,
+  MyRecommendation,
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
@@ -41,4 +43,12 @@ export function markMyAlertAsRead(alertId: string) {
   return apiRequest<MyAlert>(`/me/alerts/${alertId}/read`, {
     method: "PATCH",
   });
+}
+
+export function getMyPredictions(limit = 20) {
+  return apiRequest<MyPrediction[]>(`/me/predictions?limit=${limit}`);
+}
+
+export function getMyRecommendations(limit = 20) {
+  return apiRequest<MyRecommendation[]>(`/me/recommendations?limit=${limit}`);
 }

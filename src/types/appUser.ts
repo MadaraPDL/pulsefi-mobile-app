@@ -134,3 +134,31 @@ export type MyAlert = {
   read_at: string | null;
   created_at: string;
 };
+
+export type MyPrediction = {
+  id: string;
+  user_subscription_id: string;
+  plan_id: string | null;
+  prediction_date: string;
+  period_start: string;
+  period_end: string;
+  predicted_usage_gb: DecimalLike;
+  confidence_score: DecimalLike | null;
+  risk_level: string;
+  model_version: string | null;
+  created_at: string;
+};
+
+export type MyRecommendation = {
+  id: string;
+  user_subscription_id: string;
+  current_plan_id: string | null;
+  recommendation_plan_id: string | null;
+  prediction_id: string | null;
+  recommendation_type: string;
+  recommendation_text: string;
+  reason: string | null;
+  confidence_score: DecimalLike | null;
+  status: string;
+  created_at: string;
+};
