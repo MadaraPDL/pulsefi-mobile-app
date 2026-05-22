@@ -224,8 +224,8 @@ function DevicePolicies({
               },
             ]}
           >
-            <View style={styles.alertHeader}>
-              <View style={styles.alertTitleGroup}>
+            <View style={styles.deviceHeader}>
+              <View style={styles.deviceTitleGroup}>
                 <Text style={[styles.policyTitle, { color: colors.text }]}>
                   {isBandwidth ? "Current bandwidth limit" : "Current priority"}
                 </Text>
@@ -983,7 +983,7 @@ export function DevicesScreen() {
               downloadLimitMbps: "10",
               uploadLimitMbps: "2",
             };
-            const routerCapabilities = data.routerCapabilities[device.router_id];
+            const routerCapabilities = data?.routerCapabilities[device.router_id];
             const canApplyBandwidthLimit =
               routerCapabilities?.can_apply_bandwidth_limit === true;
             const canApplyDevicePriority =
@@ -1616,3 +1616,5 @@ const styles = StyleSheet.create({
     color: "#6B7888",
   },
 });
+
+

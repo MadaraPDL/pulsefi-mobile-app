@@ -47,10 +47,28 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const detail =
-      typeof (data as { detail?: unknown })?.detail === "string"
-        ? (data as { detail: string }).detail
-        : "Request failed. Please try again.";
+    const rawDetail = (data as { detail?: unknown })?.detail;
+
+    let detail = "Request failed. Please try again.";
+
+    if (typeof rawDetail === "string") {
+      detail = rawDetail;
+    } else if (Array.isArray(rawDetail)) {
+      detail = rawDetail
+        .map((item) => {
+          if (
+            item &&
+            typeof item === "object" &&
+            "msg" in item &&
+            typeof item.msg === "string"
+          ) {
+            return item.msg;
+          }
+
+          return JSON.stringify(item);
+        })
+        .join("\n");
+    }
 
     throw new Error(detail);
   }
