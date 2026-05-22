@@ -1,4 +1,4 @@
-﻿import Constants from "expo-constants";
+import Constants from "expo-constants";
 import { NativeModules, Platform } from "react-native";
 
 import { getAccessToken } from "../auth/session";
@@ -108,29 +108,47 @@ console.log("PulseFi mobile API:", API_BASE_URL);
 
 function parseApiErrorMessage(data: unknown) {
   const rawDetail = (data as { detail?: unknown })?.detail;
+  const rawDetails = (data as { details?: unknown })?.details;
+  const message = (data as { message?: unknown })?.message;
+
+  function parseValidationItems(items: unknown[]) {
+    return items
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return JSON.stringify(item);
+        }
+
+        const errorItem = item as {
+          msg?: unknown;
+          loc?: unknown;
+          input?: unknown;
+        };
+
+        const msg =
+          typeof errorItem.msg === "string"
+            ? errorItem.msg
+            : JSON.stringify(item);
+
+        const loc = Array.isArray(errorItem.loc)
+          ? errorItem.loc.filter((part) => part !== "body").join(".")
+          : "";
+
+        return loc ? `${loc}: ${msg}` : msg;
+      })
+      .join("\n");
+  }
+
+  if (Array.isArray(rawDetails)) {
+    return parseValidationItems(rawDetails);
+  }
 
   if (typeof rawDetail === "string") {
     return rawDetail;
   }
 
   if (Array.isArray(rawDetail)) {
-    return rawDetail
-      .map((item) => {
-        if (
-          item &&
-          typeof item === "object" &&
-          "msg" in item &&
-          typeof item.msg === "string"
-        ) {
-          return item.msg;
-        }
-
-        return JSON.stringify(item);
-      })
-      .join("\n");
+    return parseValidationItems(rawDetail);
   }
-
-  const message = (data as { message?: unknown })?.message;
 
   if (typeof message === "string") {
     return message;
