@@ -109,6 +109,9 @@ function canRequestPlanChange(recommendation: MyRecommendation) {
 
 export function InsightsScreen() {
   const { colors } = usePulseFiTheme();
+  const primaryActionBackground =
+    colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
+  const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [data, setData] = useState<InsightsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -438,7 +441,7 @@ export function InsightsScreen() {
                   {
                     backgroundColor:
                       selectedPrediction?.id === prediction.id
-                        ? colors.primary
+                        ? primaryActionBackground
                         : colors.surface,
                     borderWidth: 1,
                     borderColor:
@@ -457,7 +460,7 @@ export function InsightsScreen() {
                     {
                       color:
                         selectedPrediction?.id === prediction.id
-                          ? colors.buttonText
+                          ? primaryActionText
                           : colors.text,
                     },
                   ]}
@@ -500,7 +503,9 @@ export function InsightsScreen() {
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  backgroundColor: active
+                    ? primaryActionBackground
+                    : colors.surfaceMuted,
                   paddingHorizontal: 12,
                   paddingVertical: 7,
                 }}
@@ -508,7 +513,7 @@ export function InsightsScreen() {
               >
                 <Text
                   style={{
-                    color: active ? colors.buttonText : colors.textMuted,
+                    color: active ? primaryActionText : colors.textMuted,
                     fontSize: 12,
                     fontWeight: "900",
                   }}
@@ -601,7 +606,7 @@ export function InsightsScreen() {
                     {
                       backgroundColor:
                         selectedRecommendation?.id === recommendation.id
-                          ? colors.primary
+                          ? primaryActionBackground
                           : colors.surface,
                       borderWidth: 1,
                       borderColor:
@@ -622,7 +627,7 @@ export function InsightsScreen() {
                       {
                         color:
                           selectedRecommendation?.id === recommendation.id
-                            ? colors.buttonText
+                            ? primaryActionText
                             : colors.text,
                       },
                     ]}
@@ -640,12 +645,20 @@ export function InsightsScreen() {
                     disabled={isCreating}
                     style={[
                       styles.primaryButton,
-                      { backgroundColor: colors.primary },
+                      {
+                        backgroundColor: primaryActionBackground,
+                        borderColor: colors.primary,
+                      },
                       isCreating && styles.primaryButtonDisabled,
                     ]}
                     onPress={() => void handleRequestPlanChange(recommendation.id)}
                   >
-                    <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
+                    <Text
+                      style={[
+                        styles.primaryButtonText,
+                        { color: primaryActionText },
+                      ]}
+                    >
                       {isCreating ? "Sending..." : "Request plan change"}
                     </Text>
                   </Pressable>
@@ -682,7 +695,9 @@ export function InsightsScreen() {
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  backgroundColor: active
+                    ? primaryActionBackground
+                    : colors.surfaceMuted,
                   paddingHorizontal: 12,
                   paddingVertical: 7,
                 }}
@@ -690,7 +705,7 @@ export function InsightsScreen() {
               >
                 <Text
                   style={{
-                    color: active ? colors.buttonText : colors.textMuted,
+                    color: active ? primaryActionText : colors.textMuted,
                     fontSize: 12,
                     fontWeight: "900",
                   }}
@@ -778,7 +793,7 @@ export function InsightsScreen() {
                   {
                     backgroundColor:
                       selectedPlanChangeRequest?.id === request.id
-                        ? colors.primary
+                        ? primaryActionBackground
                         : colors.surface,
                     borderWidth: 1,
                     borderColor:
@@ -797,7 +812,7 @@ export function InsightsScreen() {
                     {
                       color:
                         selectedPlanChangeRequest?.id === request.id
-                          ? colors.buttonText
+                          ? primaryActionText
                           : colors.text,
                     },
                   ]}
@@ -968,17 +983,23 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#00A7D8",
+    paddingHorizontal: 16,
     paddingVertical: 11,
-    backgroundColor: "#102033",
+    backgroundColor: "#EAF9FE",
   },
   primaryButtonDisabled: {
     opacity: 0.7,
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: "#0B5D7A",
     fontSize: 14,
     fontWeight: "900",
+    textAlign: "center",
   },
   mutedText: {
     fontSize: 14,

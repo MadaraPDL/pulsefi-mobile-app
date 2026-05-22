@@ -1,9 +1,7 @@
 import { useState } from "react";
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +9,7 @@ import {
   View,
 } from "react-native";
 
+import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 
 import {
@@ -258,23 +257,13 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 </View>
               ) : null}
 
-              <Pressable
+              <PulseFiButton
+                title="Sign in"
                 disabled={isSubmitting}
-                style={[
-                  styles.button,
-                  { backgroundColor: colors.primary },
-                  isSubmitting && styles.buttonDisabled,
-                ]}
+                fullWidth
+                loading={isSubmitting}
                 onPress={() => void handleLogin()}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={colors.buttonText} />
-                ) : (
-                  <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-                    Sign in
-                  </Text>
-                )}
-              </Pressable>
+              />
             </>
           ) : null}
 
@@ -334,69 +323,39 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
                   <View style={styles.fallbackActions}>
                     {canUseEmail ? (
-                      <Pressable
+                      <PulseFiButton
+                        title="Send code to email"
+                        variant="ghost"
+                        compact
                         disabled={isSubmitting}
-                        style={[
-                          styles.fallbackButton,
-                          { borderColor: colors.primary },
-                        ]}
                         onPress={() => void handleChangeMFAMethod("email")}
-                      >
-                        <Text
-                          style={[
-                            styles.fallbackButtonText,
-                            { color: colors.primary },
-                          ]}
-                        >
-                          Send code to email
-                        </Text>
-                      </Pressable>
+                      />
                     ) : null}
 
                     {canUseAuthenticator ? (
-                      <Pressable
+                      <PulseFiButton
+                        title="Use authenticator"
+                        variant="ghost"
+                        compact
                         disabled={isSubmitting}
-                        style={[
-                          styles.fallbackButton,
-                          { borderColor: colors.primary },
-                        ]}
                         onPress={() =>
                           void handleChangeMFAMethod("authenticator")
                         }
-                      >
-                        <Text
-                          style={[
-                            styles.fallbackButtonText,
-                            { color: colors.primary },
-                          ]}
-                        >
-                          Use authenticator
-                        </Text>
-                      </Pressable>
+                      />
                     ) : null}
 
                     {canUseBackupCode ? (
-                      <Pressable
+                      <PulseFiButton
+                        title="Use backup code"
+                        variant="ghost"
+                        compact
                         disabled={isSubmitting}
-                        style={[
-                          styles.fallbackButton,
-                          { borderColor: colors.primary },
-                        ]}
                         onPress={() => {
                           setIsBackupCodeMode(true);
                           setMfaCode("");
                           setErrorMessage(null);
                         }}
-                      >
-                        <Text
-                          style={[
-                            styles.fallbackButtonText,
-                            { color: colors.primary },
-                          ]}
-                        >
-                          Use backup code
-                        </Text>
-                      </Pressable>
+                      />
                     ) : null}
                   </View>
                 </View>
@@ -410,33 +369,21 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 </View>
               ) : null}
 
-              <Pressable
+              <PulseFiButton
+                title="Verify MFA"
                 disabled={isSubmitting}
-                style={[
-                  styles.button,
-                  { backgroundColor: colors.primary },
-                  isSubmitting && styles.buttonDisabled,
-                ]}
+                fullWidth
+                loading={isSubmitting}
                 onPress={() => void handleVerifyMFA()}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={colors.buttonText} />
-                ) : (
-                  <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-                    Verify MFA
-                  </Text>
-                )}
-              </Pressable>
+              />
 
-              <Pressable
+              <PulseFiButton
+                title="Back to login"
+                variant="secondary"
                 disabled={isSubmitting}
-                style={[styles.secondaryButton, { borderColor: colors.border }]}
+                fullWidth
                 onPress={resetToCredentials}
-              >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                  Back to login
-                </Text>
-              </Pressable>
+              />
             </>
           ) : null}
 
@@ -457,14 +404,12 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 </Text>
               </View>
 
-              <Pressable
-                style={[styles.secondaryButton, { borderColor: colors.border }]}
+              <PulseFiButton
+                title="Back to login"
+                variant="secondary"
+                fullWidth
                 onPress={resetToCredentials}
-              >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                  Back to login
-                </Text>
-              </Pressable>
+              />
             </>
           ) : null}
         </View>
@@ -565,16 +510,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  fallbackButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  fallbackButtonText: {
-    fontSize: 13,
-    fontWeight: "900",
-  },
   errorBox: {
     borderRadius: 14,
     padding: 12,
@@ -586,32 +521,5 @@ const styles = StyleSheet.create({
     color: "#8A2E1B",
     fontSize: 14,
     fontWeight: "700",
-  },
-  button: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 50,
-    borderRadius: 16,
-    backgroundColor: "#102033",
-  },
-  secondaryButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    backgroundColor: "transparent",
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  buttonDisabled: {
-    opacity: 0.75,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "900",
   },
 });

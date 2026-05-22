@@ -126,6 +126,18 @@ function getCapabilityHelpText(
   return "This router does not support device priority, so PulseFi cannot apply this action here.";
 }
 
+function getPrimaryActionBackground(
+  colors: ReturnType<typeof usePulseFiTheme>["colors"]
+) {
+  return colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
+}
+
+function getPrimaryActionText(
+  colors: ReturnType<typeof usePulseFiTheme>["colors"]
+) {
+  return colors.mode === "dark" ? colors.primary : "#0B5D7A";
+}
+
 function DeviceUsageSummary({ usage }: { usage?: MyUsageTotals }) {
   const { colors } = usePulseFiTheme();
 
@@ -184,6 +196,8 @@ function DevicePolicies({
   onDeactivatePolicy: (policy: MyDevicePolicy) => void;
 }) {
   const { colors } = usePulseFiTheme();
+  const primaryActionBackground = getPrimaryActionBackground(colors);
+  const primaryActionText = getPrimaryActionText(colors);
   const latestBandwidthPolicy = getLatestPolicy(policies, "bandwidth_limit");
   const latestPriorityPolicy = getLatestPolicy(policies, "device_priority");
   const currentPolicies = [latestBandwidthPolicy, latestPriorityPolicy].filter(
@@ -240,8 +254,8 @@ function DevicePolicies({
                 style={[
                   styles.secondaryButton,
                   {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
+                    backgroundColor: colors.dangerBackground,
+                    borderColor: colors.dangerBorder,
                     paddingHorizontal: 12,
                     paddingVertical: 9,
                   },
@@ -321,7 +335,7 @@ function DevicePolicies({
               style={[
                 styles.secondaryButton,
                 {
-                  backgroundColor: selected ? colors.primary : colors.surface,
+                  backgroundColor: selected ? primaryActionBackground : colors.surface,
                   borderColor: selected ? colors.primary : colors.border,
                 },
                 isLoadingDetail && styles.buttonDisabled,
@@ -332,7 +346,7 @@ function DevicePolicies({
                 style={[
                   styles.secondaryButtonText,
                   {
-                    color: selected ? colors.buttonText : colors.text,
+                    color: selected ? primaryActionText : colors.text,
                   },
                 ]}
               >
@@ -354,6 +368,8 @@ function DevicePolicies({
 
 export function DevicesScreen() {
   const { colors } = usePulseFiTheme();
+  const primaryActionBackground = getPrimaryActionBackground(colors);
+  const primaryActionText = getPrimaryActionText(colors);
   const [data, setData] = useState<DevicesData | null>(null);
   const [selectedDeviceDetail, setSelectedDeviceDetail] =
     useState<DeviceDetail | null>(null);
@@ -906,7 +922,7 @@ export function DevicesScreen() {
                     borderWidth: 1,
                     borderColor: active ? colors.primary : colors.border,
                     backgroundColor: active
-                      ? colors.primary
+                      ? primaryActionBackground
                       : colors.surfaceMuted,
                     paddingHorizontal: 12,
                     paddingVertical: 7,
@@ -915,7 +931,7 @@ export function DevicesScreen() {
                 >
                   <Text
                     style={{
-                      color: active ? colors.buttonText : colors.textMuted,
+                      color: active ? primaryActionText : colors.textMuted,
                       fontSize: 12,
                       fontWeight: "900",
                     }}
@@ -945,7 +961,7 @@ export function DevicesScreen() {
                     borderWidth: 1,
                     borderColor: active ? colors.primary : colors.border,
                     backgroundColor: active
-                      ? colors.primary
+                      ? primaryActionBackground
                       : colors.surfaceMuted,
                     paddingHorizontal: 12,
                     paddingVertical: 7,
@@ -954,7 +970,7 @@ export function DevicesScreen() {
                 >
                   <Text
                     style={{
-                      color: active ? colors.buttonText : colors.textMuted,
+                      color: active ? primaryActionText : colors.textMuted,
                       fontSize: 12,
                       fontWeight: "900",
                     }}
@@ -1060,10 +1076,10 @@ export function DevicesScreen() {
                     styles.secondaryButton,
                     {
                       backgroundColor: device.is_trusted
-                        ? colors.surfaceMuted
-                        : colors.primary,
+                        ? colors.dangerBackground
+                        : primaryActionBackground,
                       borderColor: device.is_trusted
-                        ? colors.border
+                        ? colors.dangerBorder
                         : colors.primary,
                     },
                     trustUpdatingDeviceId === device.id &&
@@ -1076,8 +1092,8 @@ export function DevicesScreen() {
                       styles.secondaryButtonText,
                       {
                         color: device.is_trusted
-                          ? colors.text
-                          : colors.buttonText,
+                          ? colors.dangerText
+                          : primaryActionText,
                       },
                     ]}
                   >
@@ -1094,14 +1110,21 @@ export function DevicesScreen() {
                   style={[
                     styles.secondaryButton,
                     {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
+                      backgroundColor: selectedDetail
+                        ? primaryActionBackground
+                        : colors.surface,
+                      borderColor: selectedDetail ? colors.primary : colors.border,
                     },
                     isLoadingDeviceDetail && styles.buttonDisabled,
                   ]}
                   onPress={() => void handleViewDeviceDetail(device.id)}
                 >
-                  <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      { color: selectedDetail ? primaryActionText : colors.text },
+                    ]}
+                  >
                     {isLoadingDeviceDetail
                       ? "Loading details..."
                       : selectedDetail
@@ -1213,13 +1236,25 @@ export function DevicesScreen() {
                     disabled={isWorkingOnDevice || !canApplyBandwidthLimit}
                     style={[
                       styles.primaryButton,
-                      { backgroundColor: colors.primary },
+                      {
+                        backgroundColor: primaryActionBackground,
+                        borderColor: colors.primary,
+                      },
                       (isWorkingOnDevice || !canApplyBandwidthLimit) &&
                         styles.buttonDisabled,
                     ]}
                     onPress={() => void handleCreateCustomLimit(device.id)}
                   >
-                    <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
+                    <Text
+                      style={[
+                        styles.primaryButtonText,
+                        {
+                          color: canApplyBandwidthLimit
+                            ? primaryActionText
+                            : colors.textSubtle,
+                        },
+                      ]}
+                    >
                       {isWorkingOnDevice
                         ? "Working..."
                         : canApplyBandwidthLimit
@@ -1265,7 +1300,7 @@ export function DevicesScreen() {
                           paddingVertical: 9,
                           minHeight: 38,
                           backgroundColor: canApplyDevicePriority
-                            ? colors.primary
+                            ? primaryActionBackground
                             : colors.surface,
                           borderColor: canApplyDevicePriority
                             ? colors.primary
@@ -1282,7 +1317,7 @@ export function DevicesScreen() {
                           {
                             fontSize: 12,
                             color: canApplyDevicePriority
-                              ? colors.buttonText
+                              ? primaryActionText
                               : colors.textSubtle,
                           },
                         ]}
@@ -1330,7 +1365,12 @@ export function DevicesScreen() {
                           ]}
                           onPress={() => void handleExecutePolicy(policy.id)}
                         >
-                          <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
+                          <Text
+                            style={[
+                              styles.primaryButtonText,
+                              { color: primaryActionText },
+                            ]}
+                          >
                             {isExecuting
                               ? "Executing..."
                               : `Execute ${formatLabel(policy.policy_type)}`}
@@ -1557,19 +1597,29 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#00A7D8",
+    paddingHorizontal: 16,
     paddingVertical: 11,
-    backgroundColor: "#102033",
+    backgroundColor: "#EAF9FE",
   },
   primaryButtonText: {
-    color: "#FFFFFF",
+    color: "#0B5D7A",
     fontSize: 14,
     fontWeight: "900",
+    textAlign: "center",
   },
   secondaryButton: {
-    flex: 1,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+    minHeight: 44,
     borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
     paddingVertical: 11,
     backgroundColor: "#EAF9FE",
   },

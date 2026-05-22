@@ -59,6 +59,9 @@ function getSeverityStyle(
 
 export function AlertsScreen() {
   const { colors } = usePulseFiTheme();
+  const primaryActionBackground =
+    colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
+  const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [alerts, setAlerts] = useState<MyAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -238,7 +241,9 @@ export function AlertsScreen() {
                   borderRadius: 999,
                   borderWidth: 1,
                   borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active ? colors.primary : colors.surfaceMuted,
+                  backgroundColor: active
+                    ? primaryActionBackground
+                    : colors.surfaceMuted,
                   paddingHorizontal: 12,
                   paddingVertical: 7,
                 }}
@@ -246,7 +251,7 @@ export function AlertsScreen() {
               >
                 <Text
                   style={{
-                    color: active ? colors.buttonText : colors.textMuted,
+                    color: active ? primaryActionText : colors.textMuted,
                     fontSize: 12,
                     fontWeight: "900",
                   }}
@@ -364,7 +369,7 @@ export function AlertsScreen() {
                       styles.readButton,
                       {
                         backgroundColor: selected
-                          ? colors.primary
+                          ? primaryActionBackground
                           : colors.surface,
                         borderColor: selected ? colors.primary : colors.border,
                       },
@@ -377,7 +382,7 @@ export function AlertsScreen() {
                         styles.readButtonText,
                         {
                           color: selected
-                            ? colors.buttonText
+                            ? primaryActionText
                             : colors.text,
                         },
                       ]}
@@ -395,7 +400,10 @@ export function AlertsScreen() {
                       disabled={isUpdating}
                       style={[
                         styles.readButton,
-                        { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                        },
                         isUpdating && styles.readButtonDisabled,
                       ]}
                       onPress={() => void handleMarkAsRead(alert.id)}
@@ -569,7 +577,11 @@ const styles = StyleSheet.create({
   },
   readButton: {
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
     borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
     paddingVertical: 11,
     backgroundColor: "#102033",
   },

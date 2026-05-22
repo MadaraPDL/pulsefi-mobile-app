@@ -163,7 +163,7 @@ function MoreHeader({
               <Ionicons
                 name={section.icon}
                 size={18}
-                color={isActive ? colors.buttonText : colors.primary}
+                color={colors.primary}
               />
               <View style={styles.sectionTextGroup}>
                 <Text
@@ -223,7 +223,8 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
     },
     sectionButtonActive: {
       borderColor: colors.primary,
-      backgroundColor: colors.primary,
+      backgroundColor:
+        colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE",
     },
     sectionTextGroup: {
       flex: 1,
@@ -235,15 +236,14 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       color: colors.text,
     },
     sectionTitleActive: {
-      color: colors.buttonText,
+      color: colors.primary,
     },
     sectionSubtitle: {
       fontSize: 11,
       color: colors.textSubtle,
     },
     sectionSubtitleActive: {
-      color: colors.buttonText,
-      opacity: 0.9,
+      color: colors.textMuted,
     },
   });
 }

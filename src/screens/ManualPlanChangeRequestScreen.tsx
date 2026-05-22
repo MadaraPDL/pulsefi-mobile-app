@@ -16,6 +16,7 @@ import {
   getMyPlanChangeRequests,
   getMySubscriptions,
 } from "../api/appUser";
+import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
   DecimalLike,
@@ -373,19 +374,13 @@ export function ManualPlanChangeRequestScreen() {
           style={styles.input}
         />
 
-        <Pressable
+        <PulseFiButton
+          title={isSubmitting ? "Sending..." : "Send plan request"}
           disabled={isSubmitting || !selectedSubscription || !selectedPlan}
-          style={[
-            styles.primaryButton,
-            (isSubmitting || !selectedSubscription || !selectedPlan) &&
-              styles.buttonDisabled,
-          ]}
+          loading={isSubmitting}
+          fullWidth
           onPress={() => void handleSubmit()}
-        >
-          <Text style={styles.primaryButtonText}>
-            {isSubmitting ? "Sending..." : "Send plan request"}
-          </Text>
-        </Pressable>
+        />
       </View>
 
       <View style={styles.card}>
@@ -549,8 +544,9 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       textTransform: "capitalize",
     },
     activePill: {
-      color: colors.buttonText,
-      backgroundColor: colors.primary,
+      color: colors.mode === "dark" ? colors.primary : "#0B5D7A",
+      backgroundColor:
+        colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE",
       borderColor: colors.primary,
     },
     inputLabel: {
@@ -569,21 +565,6 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       paddingVertical: 12,
       textAlignVertical: "top",
       fontSize: 15,
-    },
-    primaryButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: 48,
-      borderRadius: 16,
-      backgroundColor: colors.primary,
-    },
-    buttonDisabled: {
-      opacity: 0.65,
-    },
-    primaryButtonText: {
-      color: colors.buttonText,
-      fontSize: 15,
-      fontWeight: "900",
     },
     requestRow: {
       borderRadius: 18,

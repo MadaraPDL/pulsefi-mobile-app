@@ -81,6 +81,9 @@ function getUsageKindHelp(kind: Exclude<UsageFilter, "all">) {
 
 export function UsageScreen() {
   const { colors } = usePulseFiTheme();
+  const primaryActionBackground =
+    colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
+  const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [data, setData] = useState<UsageData | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
@@ -298,7 +301,7 @@ export function UsageScreen() {
                 styles.filterButton,
                 {
                   backgroundColor: isSelected
-                    ? colors.primary
+                    ? primaryActionBackground
                     : colors.surface,
                   borderColor: isSelected ? colors.primary : colors.border,
                   opacity: pressed ? 0.75 : 1,
@@ -309,7 +312,7 @@ export function UsageScreen() {
                 style={[
                   styles.filterText,
                   {
-                    color: isSelected ? colors.buttonText : colors.textMuted,
+                    color: isSelected ? primaryActionText : colors.textMuted,
                   },
                 ]}
               >
@@ -526,6 +529,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   filterButton: {
+    minHeight: 44,
+    justifyContent: "center",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,

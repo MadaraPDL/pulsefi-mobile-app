@@ -1,7 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
 } from "react-native";
 
 import { getCurrentAccount } from "../api/auth";
+import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession, CurrentAccount } from "../types/appUser";
 
@@ -118,14 +118,12 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
             </Text>
           </View>
 
-          <Pressable
-            style={styles.themeButton}
+          <PulseFiButton
+            title={`Switch to ${mode === "dark" ? "Light" : "Dark"}`}
+            variant="primary"
+            compact
             onPress={() => void toggleMode()}
-          >
-            <Text style={styles.themeButtonText}>
-              Switch to {mode === "dark" ? "Light" : "Dark"}
-            </Text>
-          </Pressable>
+          />
         </View>
       </View>
 
@@ -170,9 +168,12 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
         </Text>
       </View>
 
-      <Pressable style={styles.logoutButton} onPress={() => void onLogout()}>
-        <Text style={styles.logoutText}>Log out</Text>
-      </Pressable>
+      <PulseFiButton
+        title="Log out"
+        variant="danger"
+        fullWidth
+        onPress={() => void onLogout()}
+      />
     </ScrollView>
   );
 }
@@ -226,18 +227,6 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
     themeTextGroup: {
       gap: 4,
     },
-    themeButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 16,
-      paddingVertical: 12,
-      backgroundColor: colors.primary,
-    },
-    themeButtonText: {
-      fontSize: 14,
-      fontWeight: "900",
-      color: colors.buttonText,
-    },
     errorCard: {
       borderRadius: 18,
       padding: 16,
@@ -280,18 +269,6 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       fontSize: 14,
       color: colors.textSubtle,
       textAlign: "center",
-    },
-    logoutButton: {
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: 18,
-      paddingVertical: 14,
-      backgroundColor: colors.primaryStrong,
-    },
-    logoutText: {
-      fontSize: 16,
-      fontWeight: "900",
-      color: colors.buttonText,
     },
   });
 }
