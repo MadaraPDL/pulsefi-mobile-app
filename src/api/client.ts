@@ -1,13 +1,143 @@
-﻿import { getAccessToken } from "../auth/session";
+﻿import Constants from "expo-constants";
+import { NativeModules, Platform } from "react-native";
 
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1";
+import { getAccessToken } from "../auth/session";
 
-console.log("PulseFi mobile API:", API_BASE_URL);
+const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
 
 type ApiOptions = RequestInit & {
   auth?: boolean;
 };
+
+type SourceCodeModule = {
+  scriptURL?: string;
+};
+
+type WebLocationLike = {
+  protocol?: string;
+  hostname?: string;
+};
+
+type ExpoConstantsLike = {
+  expoConfig?: {
+    hostUri?: string | null;
+  } | null;
+  manifest?: {
+    hostUri?: string | null;
+    debuggerHost?: string | null;
+  } | null;
+  manifest2?: {
+    extra?: {
+      expoClient?: {
+        hostUri?: string | null;
+      } | null;
+    } | null;
+  } | null;
+};
+
+function trimTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function extractHostname(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  const withoutProtocol = value.trim().replace(/^[a-z]+:\/\//i, "");
+  const hostname = withoutProtocol.split(/[/:?#]/)[0];
+
+  return hostname || null;
+}
+
+function getWebApiBaseUrl() {
+  const location = (globalThis as { location?: WebLocationLike }).location;
+
+  if (!location?.hostname) {
+    return null;
+  }
+
+  const protocol = location.protocol === "https:" ? "https:" : "http:";
+  return `${protocol}//${location.hostname}:8000/api/v1`;
+}
+
+function getExpoConstantsApiBaseUrl() {
+  const constants = Constants as ExpoConstantsLike;
+
+  const hostname =
+    extractHostname(constants.expoConfig?.hostUri) ??
+    extractHostname(constants.manifest2?.extra?.expoClient?.hostUri) ??
+    extractHostname(constants.manifest?.hostUri) ??
+    extractHostname(constants.manifest?.debuggerHost);
+
+  if (!hostname) {
+    return null;
+  }
+
+  return `http://${hostname}:8000/api/v1`;
+}
+
+function getExpoNativeApiBaseUrl() {
+  const sourceCode = NativeModules.SourceCode as SourceCodeModule | undefined;
+  const scriptUrl = sourceCode?.scriptURL;
+  const hostname = extractHostname(scriptUrl);
+
+  if (!hostname) {
+    return null;
+  }
+
+  return `http://${hostname}:8000/api/v1`;
+}
+
+function getDefaultApiBaseUrl() {
+  if (Platform.OS === "web") {
+    return getWebApiBaseUrl() ?? DEFAULT_LOCAL_API_BASE_URL;
+  }
+
+  return (
+    getExpoConstantsApiBaseUrl() ??
+    getExpoNativeApiBaseUrl() ??
+    DEFAULT_LOCAL_API_BASE_URL
+  );
+}
+
+const envApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const API_BASE_URL = trimTrailingSlash(envApiBaseUrl || getDefaultApiBaseUrl());
+
+console.log("PulseFi mobile API:", API_BASE_URL);
+
+function parseApiErrorMessage(data: unknown) {
+  const rawDetail = (data as { detail?: unknown })?.detail;
+
+  if (typeof rawDetail === "string") {
+    return rawDetail;
+  }
+
+  if (Array.isArray(rawDetail)) {
+    return rawDetail
+      .map((item) => {
+        if (
+          item &&
+          typeof item === "object" &&
+          "msg" in item &&
+          typeof item.msg === "string"
+        ) {
+          return item.msg;
+        }
+
+        return JSON.stringify(item);
+      })
+      .join("\n");
+  }
+
+  const message = (data as { message?: unknown })?.message;
+
+  if (typeof message === "string") {
+    return message;
+  }
+
+  return "Request failed. Please try again.";
+}
 
 export async function apiRequest<T>(
   path: string,
@@ -47,30 +177,7 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
-    const rawDetail = (data as { detail?: unknown })?.detail;
-
-    let detail = "Request failed. Please try again.";
-
-    if (typeof rawDetail === "string") {
-      detail = rawDetail;
-    } else if (Array.isArray(rawDetail)) {
-      detail = rawDetail
-        .map((item) => {
-          if (
-            item &&
-            typeof item === "object" &&
-            "msg" in item &&
-            typeof item.msg === "string"
-          ) {
-            return item.msg;
-          }
-
-          return JSON.stringify(item);
-        })
-        .join("\n");
-    }
-
-    throw new Error(detail);
+    throw new Error(parseApiErrorMessage(data));
   }
 
   return data as T;
