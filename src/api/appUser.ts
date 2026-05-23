@@ -1,4 +1,4 @@
-﻿import { apiRequest } from "./client";
+import { apiRequest } from "./client";
 import type {
   AppUserSummary,
   MyAlert,
@@ -116,11 +116,18 @@ export function getMyPlanChangeRequest(requestId: string) {
   return apiRequest<MyPlanChangeRequest>(`/me/plan-change-requests/${requestId}`);
 }
 
+export type MySubscriptionRequestType =
+  | "upgrade"
+  | "downgrade"
+  | "suspend_subscription"
+  | "suspend_account";
+
 export function createMyPlanChangeRequest(data: {
   user_subscription_id: string;
-  requested_plan_id: string;
-  request_type: "upgrade" | "downgrade";
+  requested_plan_id?: string | null;
+  request_type: MySubscriptionRequestType;
   reason?: string | null;
+  confirmation_text: string;
 }) {
   return apiRequest<MyPlanChangeRequest>("/me/plan-change-requests", {
     method: "POST",

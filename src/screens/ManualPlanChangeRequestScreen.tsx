@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -15,6 +15,7 @@ import {
   getMyAvailablePlans,
   getMyPlanChangeRequests,
   getMySubscriptions,
+  type MySubscriptionRequestType,
 } from "../api/appUser";
 import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
@@ -24,6 +25,35 @@ import type {
   MySubscription,
   MySubscriptionPlanSummary,
 } from "../types/appUser";
+
+type ServiceRequestMode =
+  | "change_plan"
+  | "suspend_subscription"
+  | "suspend_account";
+
+const requestModeOptions: Array<{
+  value: ServiceRequestMode;
+  title: string;
+  description: string;
+}> = [
+  {
+    value: "change_plan",
+    title: "Change plan",
+    description: "Ask your ISP Admin to move this subscription to another plan.",
+  },
+  {
+    value: "suspend_subscription",
+    title: "Suspend subscription",
+    description:
+      "Temporarily suspend this selected subscription after admin approval.",
+  },
+  {
+    value: "suspend_account",
+    title: "Suspend account",
+    description:
+      "Request full account suspension, for example when changing ISPs.",
+  },
+];
 
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -50,7 +80,7 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function getRequestType(
+function getPlanRequestType(
   subscription: MySubscription | null,
   plan: MySubscriptionPlanSummary | null
 ): "upgrade" | "downgrade" {
@@ -76,17 +106,48 @@ function getRequestType(
   return "downgrade";
 }
 
+function getRequiredConfirmation(mode: ServiceRequestMode) {
+  if (mode === "change_plan") {
+    return "CHANGE PLAN";
+  }
+
+  if (mode === "suspend_subscription") {
+    return "SUSPEND SUBSCRIPTION";
+  }
+
+  return "SUSPEND ACCOUNT";
+}
+
+function getBackendRequestType(
+  mode: ServiceRequestMode,
+  subscription: MySubscription | null,
+  plan: MySubscriptionPlanSummary | null
+): MySubscriptionRequestType {
+  if (mode === "suspend_subscription") {
+    return "suspend_subscription";
+  }
+
+  if (mode === "suspend_account") {
+    return "suspend_account";
+  }
+
+  return getPlanRequestType(subscription, plan);
+}
+
 export function ManualPlanChangeRequestScreen() {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const [requestMode, setRequestMode] =
+    useState<ServiceRequestMode>("change_plan");
   const [subscriptions, setSubscriptions] = useState<MySubscription[]>([]);
   const [plans, setPlans] = useState<MySubscriptionPlanSummary[]>([]);
   const [requests, setRequests] = useState<MyPlanChangeRequest[]>([]);
   const [selectedSubscriptionId, setSelectedSubscriptionId] =
     useState<string | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [reason, setReason] = useState("Requested manually from PulseFi mobile app.");
+  const [reason, setReason] = useState("");
+  const [confirmationText, setConfirmationText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -130,7 +191,7 @@ export function ManualPlanChangeRequestScreen() {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Could not load plan request data."
+          : "Could not load request data."
       );
     } finally {
       setIsLoading(false);
@@ -164,7 +225,7 @@ export function ManualPlanChangeRequestScreen() {
   );
 
   useEffect(() => {
-    if (!availableTargetPlans.length) {
+    if (!availableTargetPlans.length || requestMode !== "change_plan") {
       setSelectedPlanId(null);
       return;
     }
@@ -176,13 +237,50 @@ export function ManualPlanChangeRequestScreen() {
 
       return availableTargetPlans[0].id;
     });
-  }, [availableTargetPlans]);
+  }, [availableTargetPlans, requestMode]);
 
-  const requestType = getRequestType(selectedSubscription, selectedPlan);
+  useEffect(() => {
+    setConfirmationText("");
+    setSuccessMessage(null);
+    setErrorMessage(null);
+  }, [requestMode, selectedSubscriptionId, selectedPlanId]);
+
+  const backendRequestType = getBackendRequestType(
+    requestMode,
+    selectedSubscription,
+    selectedPlan
+  );
+  const requiredConfirmation = getRequiredConfirmation(requestMode);
+  const confirmationMatches =
+    confirmationText.trim().toUpperCase() === requiredConfirmation;
+
+  const canSubmit =
+    Boolean(selectedSubscription) &&
+    confirmationMatches &&
+    reason.trim().length >= 5 &&
+    (requestMode !== "change_plan" || Boolean(selectedPlan));
 
   async function handleSubmit() {
-    if (!selectedSubscription || !selectedPlan) {
-      setErrorMessage("Select a subscription and a target plan first.");
+    if (!selectedSubscription) {
+      setErrorMessage("Select a subscription first.");
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (requestMode === "change_plan" && !selectedPlan) {
+      setErrorMessage("Select a target plan first.");
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (reason.trim().length < 5) {
+      setErrorMessage("Write a short reason before submitting this request.");
+      setSuccessMessage(null);
+      return;
+    }
+
+    if (!confirmationMatches) {
+      setErrorMessage(`Type ${requiredConfirmation} to confirm this request.`);
       setSuccessMessage(null);
       return;
     }
@@ -194,18 +292,20 @@ export function ManualPlanChangeRequestScreen() {
 
       const createdRequest = await createMyPlanChangeRequest({
         user_subscription_id: selectedSubscription.id,
-        requested_plan_id: selectedPlan.id,
-        request_type: requestType,
-        reason: reason.trim() || null,
+        requested_plan_id:
+          requestMode === "change_plan" ? selectedPlan?.id ?? null : null,
+        request_type: backendRequestType,
+        reason: reason.trim(),
+        confirmation_text: requiredConfirmation,
       });
 
       setRequests((current) => [createdRequest, ...current]);
-      setSuccessMessage("Plan-change request sent to your ISP admin.");
+      setSuccessMessage("Request sent to your ISP Admin for review.");
+      setConfirmationText("");
+      setReason("");
     } catch (error) {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not create plan-change request."
+        error instanceof Error ? error.message : "Could not create request."
       );
     } finally {
       setIsSubmitting(false);
@@ -216,7 +316,7 @@ export function ManualPlanChangeRequestScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={styles.mutedText}>Loading plans...</Text>
+        <Text style={styles.mutedText}>Loading request options...</Text>
       </View>
     );
   }
@@ -236,10 +336,11 @@ export function ManualPlanChangeRequestScreen() {
         />
       }
     >
-      <Text style={styles.eyebrow}>Plan Request</Text>
-      <Text style={styles.title}>Request a plan change</Text>
+      <Text style={styles.eyebrow}>Service Request</Text>
+      <Text style={styles.title}>Request account or plan changes</Text>
       <Text style={styles.subtitle}>
-        Choose one of your subscriptions and request an active plan from your ISP.
+        Choose what you need, explain the reason, then type the confirmation
+        phrase. Your ISP Admin must approve the request before anything changes.
       </Text>
 
       {errorMessage ? (
@@ -257,6 +358,33 @@ export function ManualPlanChangeRequestScreen() {
       ) : null}
 
       <View style={styles.card}>
+        <Text style={styles.cardLabel}>Request Type</Text>
+
+        {requestModeOptions.map((option) => {
+          const selected = requestMode === option.value;
+
+          return (
+            <Pressable
+              key={option.value}
+              style={[styles.optionRow, selected && styles.selectedOption]}
+              onPress={() => setRequestMode(option.value)}
+            >
+              <View style={styles.optionHeader}>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={styles.optionTitle}>{option.title}</Text>
+                  <Text style={styles.smallText}>{option.description}</Text>
+                </View>
+
+                <Text style={[styles.statusPill, selected && styles.activePill]}>
+                  {selected ? "Selected" : "Choose"}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardLabel}>Current Subscription</Text>
 
         {subscriptions.length ? (
@@ -266,10 +394,7 @@ export function ManualPlanChangeRequestScreen() {
             return (
               <Pressable
                 key={subscription.id}
-                style={[
-                  styles.optionRow,
-                  selected && styles.selectedOption,
-                ]}
+                style={[styles.optionRow, selected && styles.selectedOption]}
                 onPress={() => setSelectedSubscriptionId(subscription.id)}
               >
                 <View style={styles.optionHeader}>
@@ -279,8 +404,8 @@ export function ManualPlanChangeRequestScreen() {
                         subscription.plan.plan_name}
                     </Text>
                     <Text style={styles.smallText}>
-                      {subscription.plan.plan_name} ?{" "}
-                      {formatGb(subscription.plan.data_limit_gb)} ?{" "}
+                      {subscription.plan.plan_name} •{" "}
+                      {formatGb(subscription.plan.data_limit_gb)} •{" "}
                       {formatMoney(subscription.plan.monthly_price)}
                     </Text>
                   </View>
@@ -299,84 +424,111 @@ export function ManualPlanChangeRequestScreen() {
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Target Plan</Text>
+      {requestMode === "change_plan" ? (
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Target Plan</Text>
 
-        {availableTargetPlans.length ? (
-          availableTargetPlans.map((plan) => {
-            const selected = selectedPlanId === plan.id;
+          {availableTargetPlans.length ? (
+            availableTargetPlans.map((plan) => {
+              const selected = selectedPlanId === plan.id;
 
-            return (
-              <Pressable
-                key={plan.id}
-                style={[
-                  styles.optionRow,
-                  selected && styles.selectedOption,
-                ]}
-                onPress={() => setSelectedPlanId(plan.id)}
-              >
-                <View style={styles.optionHeader}>
-                  <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={styles.optionTitle}>{plan.plan_name}</Text>
-                    <Text style={styles.smallText}>
-                      {formatGb(plan.data_limit_gb)} ? {formatMoney(plan.monthly_price)}
-                      {" ? "}
-                      {formatMbps(plan.speed_limit_mbps)}
+              return (
+                <Pressable
+                  key={plan.id}
+                  style={[styles.optionRow, selected && styles.selectedOption]}
+                  onPress={() => setSelectedPlanId(plan.id)}
+                >
+                  <View style={styles.optionHeader}>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={styles.optionTitle}>{plan.plan_name}</Text>
+                      <Text style={styles.smallText}>
+                        {formatGb(plan.data_limit_gb)} •{" "}
+                        {formatMoney(plan.monthly_price)} •{" "}
+                        {formatMbps(plan.speed_limit_mbps)}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.statusPill, selected && styles.activePill]}>
+                      {selected ? "Target" : "Choose"}
                     </Text>
                   </View>
 
-                  <Text style={[styles.statusPill, selected && styles.activePill]}>
-                    {selected ? "Target" : "Choose"}
-                  </Text>
-                </View>
-
-                {plan.description ? (
-                  <Text style={styles.cardText}>{plan.description}</Text>
-                ) : null}
-              </Pressable>
-            );
-          })
-        ) : (
-          <Text style={styles.mutedText}>
-            No other active plans are available for this ISP yet.
-          </Text>
-        )}
-      </View>
+                  {plan.description ? (
+                    <Text style={styles.cardText}>{plan.description}</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })
+          ) : (
+            <Text style={styles.mutedText}>
+              No other active plans are available for this ISP yet.
+            </Text>
+          )}
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Request Summary</Text>
+
         <Text style={styles.cardText}>
-          Request type:{" "}
-          <Text style={styles.boldText}>{formatLabel(requestType)}</Text>
+          Action:{" "}
+          <Text style={styles.boldText}>{formatLabel(backendRequestType)}</Text>
         </Text>
+
         <Text style={styles.cardText}>
-          From:{" "}
+          Subscription:{" "}
           <Text style={styles.boldText}>
-            {selectedSubscription?.plan.plan_name ?? "No subscription selected"}
+            {selectedSubscription?.subscription_label ??
+              selectedSubscription?.plan.plan_name ??
+              "No subscription selected"}
           </Text>
         </Text>
-        <Text style={styles.cardText}>
-          To:{" "}
-          <Text style={styles.boldText}>
-            {selectedPlan?.plan_name ?? "No target plan selected"}
+
+        {requestMode === "change_plan" ? (
+          <Text style={styles.cardText}>
+            Target plan:{" "}
+            <Text style={styles.boldText}>
+              {selectedPlan?.plan_name ?? "No target plan selected"}
+            </Text>
           </Text>
-        </Text>
+        ) : null}
+
+        <View style={styles.warningBox}>
+          <Text style={styles.warningTitle}>Confirmation required</Text>
+          <Text style={styles.warningText}>
+            To prevent mistakes, type{" "}
+            <Text style={styles.warningCode}>{requiredConfirmation}</Text>{" "}
+            before sending this request.
+          </Text>
+        </View>
 
         <Text style={styles.inputLabel}>Reason</Text>
         <TextInput
           value={reason}
           onChangeText={setReason}
           multiline
-          placeholder="Explain why you want this plan change"
+          placeholder="Explain why you need this request"
           placeholderTextColor={colors.textSubtle}
           selectionColor={colors.primary}
           cursorColor={colors.primary}
           style={styles.input}
         />
 
+        <Text style={styles.inputLabel}>Type confirmation</Text>
+        <TextInput
+          value={confirmationText}
+          onChangeText={setConfirmationText}
+          autoCapitalize="characters"
+          placeholder={requiredConfirmation}
+          placeholderTextColor={colors.textSubtle}
+          selectionColor={colors.primary}
+          cursorColor={colors.primary}
+          style={styles.confirmInput}
+        />
+
         <PulseFiButton
-          title={isSubmitting ? "Sending..." : "Send plan request"}
-          disabled={isSubmitting || !selectedSubscription || !selectedPlan}
+          title={isSubmitting ? "Sending..." : "Send request"}
+          disabled={isSubmitting || !canSubmit}
           loading={isSubmitting}
           fullWidth
           onPress={() => void handleSubmit()}
@@ -408,7 +560,7 @@ export function ManualPlanChangeRequestScreen() {
             </View>
           ))
         ) : (
-          <Text style={styles.mutedText}>No plan-change requests yet.</Text>
+          <Text style={styles.mutedText}>No requests yet.</Text>
         )}
       </View>
     </ScrollView>
@@ -565,6 +717,42 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       paddingVertical: 12,
       textAlignVertical: "top",
       fontSize: 15,
+    },
+    confirmInput: {
+      minHeight: 52,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+      color: colors.text,
+      paddingHorizontal: 14,
+      fontSize: 15,
+      fontWeight: "900",
+      letterSpacing: 0.6,
+    },
+    warningBox: {
+      borderRadius: 18,
+      padding: 14,
+      gap: 6,
+      backgroundColor:
+        colors.mode === "dark" ? "rgba(255, 204, 102, 0.1)" : "#FFF8E7",
+      borderWidth: 1,
+      borderColor:
+        colors.mode === "dark" ? "rgba(255, 204, 102, 0.28)" : "#F2D18D",
+    },
+    warningTitle: {
+      color: colors.text,
+      fontWeight: "900",
+      fontSize: 14,
+    },
+    warningText: {
+      color: colors.textMuted,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    warningCode: {
+      color: colors.text,
+      fontWeight: "900",
     },
     requestRow: {
       borderRadius: 18,
