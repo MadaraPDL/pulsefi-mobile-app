@@ -11,7 +11,6 @@ export type MFARequiredResponse = {
   backup_codes_available: boolean;
   expires_at: string;
   message: string;
-  dev_email_code?: string | null;
 };
 
 export type MFASetupRequiredResponse = {

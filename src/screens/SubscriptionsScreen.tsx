@@ -332,7 +332,7 @@ export function SubscriptionsScreen() {
 
                 <View style={styles.rowMeta}>
                   <Text style={styles.cardText}>
-                    {formatGb(subscription.plan.data_limit_gb)} ?{" "}
+                    {formatGb(subscription.plan.data_limit_gb)} -{" "}
                     {formatMoney(subscription.plan.monthly_price)}
                   </Text>
                   <Text style={styles.smallText}>

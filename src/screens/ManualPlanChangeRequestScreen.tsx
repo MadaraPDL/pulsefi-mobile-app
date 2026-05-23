@@ -404,8 +404,8 @@ export function ManualPlanChangeRequestScreen() {
                         subscription.plan.plan_name}
                     </Text>
                     <Text style={styles.smallText}>
-                      {subscription.plan.plan_name} •{" "}
-                      {formatGb(subscription.plan.data_limit_gb)} •{" "}
+                      {subscription.plan.plan_name} -{" "}
+                      {formatGb(subscription.plan.data_limit_gb)} -{" "}
                       {formatMoney(subscription.plan.monthly_price)}
                     </Text>
                   </View>
@@ -442,8 +442,8 @@ export function ManualPlanChangeRequestScreen() {
                     <View style={{ flex: 1, gap: 4 }}>
                       <Text style={styles.optionTitle}>{plan.plan_name}</Text>
                       <Text style={styles.smallText}>
-                        {formatGb(plan.data_limit_gb)} •{" "}
-                        {formatMoney(plan.monthly_price)} •{" "}
+                        {formatGb(plan.data_limit_gb)} -{" "}
+                        {formatMoney(plan.monthly_price)} -{" "}
                         {formatMbps(plan.speed_limit_mbps)}
                       </Text>
                     </View>
