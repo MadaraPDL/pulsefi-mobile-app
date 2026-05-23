@@ -150,3 +150,155 @@ export async function changeAppUserMFAChallengeMethod(payload: {
 export function getCurrentAccount() {
   return apiRequest<CurrentAccount>("/auth/me");
 }
+export type MFAStatusResponse = {
+  account_type: "admin" | "app_user";
+  mfa_required: boolean;
+  mfa_enabled: boolean;
+  email_mfa_enabled: boolean;
+  authenticator_mfa_enabled: boolean;
+  preferred_mfa_method: MFAMethod | null;
+  active_methods: MFAMethod[];
+  can_disable_email_mfa: boolean;
+  can_disable_authenticator_mfa: boolean;
+};
+
+export type MFASettingsChallengeResponse = {
+  challenge_token: string;
+  method: MFAMethod;
+  expires_at: string;
+  message: string;
+  dev_email_code?: string | null;
+};
+
+export type MFABackupCodeStatusResponse = {
+  account_type: "admin" | "app_user";
+  backup_codes_available: boolean;
+  available_backup_code_count: number;
+};
+
+export type MFABackupCodesRegenerateResponse = {
+  account_type: "admin" | "app_user";
+  backup_codes_available: boolean;
+  available_backup_code_count: number;
+  backup_codes: string[];
+  message: string;
+};
+
+export function getMyMFAStatus() {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/status");
+}
+
+export function getMyMFABackupCodeStatus() {
+  return apiRequest<MFABackupCodeStatusResponse>(
+    "/auth/me/mfa/backup-codes/status"
+  );
+}
+
+export function startMyAuthenticatorMFASetup() {
+  return apiRequest<MFASetupRequiredResponse>(
+    "/auth/me/mfa/authenticator/setup",
+    {
+      method: "POST",
+    }
+  );
+}
+
+export function confirmMyAuthenticatorMFASetup(payload: {
+  mfa_setup_token: string;
+  code: string;
+}) {
+  return apiRequest<MFAStatusResponse>(
+    "/auth/me/mfa/authenticator/setup/confirm",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export function enableMyEmailMFA(payload: {
+  challenge_token: string;
+  code: string;
+}) {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/email/enable", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "enable_email",
+      challenge_token: payload.challenge_token,
+      code: payload.code,
+    }),
+  });
+}
+
+export function applyMyMFASettingsAction(payload: {
+  action:
+    | "enable_email"
+    | "disable_email"
+    | "disable_authenticator"
+    | "prefer_email"
+    | "prefer_authenticator";
+  challenge_token: string;
+  code: string;
+}) {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/settings-action", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateMyPreferredMFAMethod(method: MFAMethod) {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/preferred-method", {
+    method: "PATCH",
+    body: JSON.stringify({ method }),
+  });
+}
+
+export function createMyMFASettingsChallenge(method: MFAMethod) {
+  return apiRequest<MFASettingsChallengeResponse>(
+    "/auth/me/mfa/settings-challenge",
+    {
+      method: "POST",
+      body: JSON.stringify({ method }),
+    }
+  );
+}
+
+export function regenerateMyMFABackupCodes(payload: {
+  challenge_token: string;
+  code: string;
+}) {
+  return apiRequest<MFABackupCodesRegenerateResponse>(
+    "/auth/me/mfa/backup-codes/regenerate",
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+export function disableMyEmailMFA(payload: {
+  challenge_token: string;
+  code: string;
+}) {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/email/disable", {
+    method: "PATCH",
+    body: JSON.stringify({
+      action: "disable_email",
+      challenge_token: payload.challenge_token,
+      code: payload.code,
+    }),
+  });
+}
+
+export function disableMyAuthenticatorMFA(payload: {
+  challenge_token: string;
+  code: string;
+}) {
+  return apiRequest<MFAStatusResponse>("/auth/me/mfa/authenticator/disable", {
+    method: "PATCH",
+    body: JSON.stringify({
+      action: "disable_authenticator",
+      challenge_token: payload.challenge_token,
+      code: payload.code,
+    }),
+  });
+}
