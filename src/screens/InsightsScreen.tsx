@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 
 import {
   createPlanChangeRequestFromRecommendation,
@@ -19,18 +20,24 @@ import {
   getMyPredictions,
   getMyRecommendation,
   getMyRecommendations,
+  getMyRouters,
+  getMySubscriptions,
 } from "../api/appUser";
 import type {
   DecimalLike,
   MyPlanChangeRequest,
   MyPrediction,
   MyRecommendation,
+  MyRouter,
+  MySubscription,
 } from "../types/appUser";
 
 type InsightsData = {
   predictions: MyPrediction[];
   recommendations: MyRecommendation[];
   planChangeRequests: MyPlanChangeRequest[];
+  routers: MyRouter[];
+  subscriptions: MySubscription[];
 };
 
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
@@ -107,8 +114,13 @@ function canRequestPlanChange(recommendation: MyRecommendation) {
   );
 }
 
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
+}
+
 export function InsightsScreen() {
   const { colors } = usePulseFiTheme();
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
@@ -141,14 +153,27 @@ export function InsightsScreen() {
       setErrorMessage(null);
       setSuccessMessage(null);
 
-      const [predictions, recommendations, planChangeRequests] =
-        await Promise.all([
-          getMyPredictions(20),
-          getMyRecommendations(20),
-          getMyPlanChangeRequests(20),
-        ]);
+      const [
+        predictions,
+        recommendations,
+        planChangeRequests,
+        routers,
+        subscriptions,
+      ] = await Promise.all([
+        getMyPredictions(50),
+        getMyRecommendations(50),
+        getMyPlanChangeRequests(50),
+        getMyRouters(),
+        getMySubscriptions(),
+      ]);
 
-      setData({ predictions, recommendations, planChangeRequests });
+      setData({
+        predictions,
+        recommendations,
+        planChangeRequests,
+        routers,
+        subscriptions,
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -165,8 +190,70 @@ export function InsightsScreen() {
     void loadInsights();
   }, [loadInsights]);
 
+  const selectedRouter = useMemo(() => {
+    if (!data?.routers.length) {
+      return null;
+    }
+
+    return (
+      data.routers.find((router) => router.id === selectedRouterId) ??
+      data.routers[0]
+    );
+  }, [data?.routers, selectedRouterId]);
+
+  useEffect(() => {
+    if (!selectedRouterId && selectedRouter) {
+      setSelectedRouterId(selectedRouter.id);
+    }
+  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+  const selectedSubscription = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return null;
+    }
+
+    return (
+      data?.subscriptions.find(
+        (subscription) => subscription.id === selectedRouter.user_subscription_id
+      ) ?? null
+    );
+  }, [data?.subscriptions, selectedRouter]);
+
+  const selectedServiceLineId = selectedRouter?.user_subscription_id ?? null;
+
+  const selectedPredictions = useMemo(() => {
+    if (!selectedServiceLineId) {
+      return [];
+    }
+
+    return (data?.predictions ?? []).filter(
+      (prediction) => prediction.user_subscription_id === selectedServiceLineId
+    );
+  }, [data?.predictions, selectedServiceLineId]);
+
+  const selectedRecommendations = useMemo(() => {
+    if (!selectedServiceLineId) {
+      return [];
+    }
+
+    return (data?.recommendations ?? []).filter(
+      (recommendation) =>
+        recommendation.user_subscription_id === selectedServiceLineId
+    );
+  }, [data?.recommendations, selectedServiceLineId]);
+
+  const selectedPlanChangeRequests = useMemo(() => {
+    if (!selectedServiceLineId) {
+      return [];
+    }
+
+    return (data?.planChangeRequests ?? []).filter(
+      (request) => request.user_subscription_id === selectedServiceLineId
+    );
+  }, [data?.planChangeRequests, selectedServiceLineId]);
+
   const filteredRecommendations = useMemo(() => {
-    return (data?.recommendations ?? []).filter((recommendation) => {
+    return selectedRecommendations.filter((recommendation) => {
       if (recommendationStatusFilter === "all") {
         return true;
       }
@@ -175,17 +262,17 @@ export function InsightsScreen() {
         recommendation.status.toLowerCase() === recommendationStatusFilter
       );
     });
-  }, [data?.recommendations, recommendationStatusFilter]);
+  }, [selectedRecommendations, recommendationStatusFilter]);
 
   const filteredPlanChangeRequests = useMemo(() => {
-    return (data?.planChangeRequests ?? []).filter((request) => {
+    return selectedPlanChangeRequests.filter((request) => {
       if (planRequestStatusFilter === "all") {
         return true;
       }
 
       return request.status.toLowerCase() === planRequestStatusFilter;
     });
-  }, [data?.planChangeRequests, planRequestStatusFilter]);
+  }, [selectedPlanChangeRequests, planRequestStatusFilter]);
 
   async function handleViewPredictionDetail(predictionId: string) {
     if (selectedPrediction?.id === predictionId) {
@@ -314,7 +401,9 @@ export function InsightsScreen() {
         };
       });
 
-      setSuccessMessage("Plan change request sent to your ISP admin.");
+      setSuccessMessage(
+        "Recommendation request sent to your ISP Admin for the selected router."
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -350,8 +439,31 @@ export function InsightsScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Insights</Text>
       <Text style={[styles.title, { color: colors.text }]}>Predictions & recommendations</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        See predicted usage, risk level, recommendations, and plan change requests.
+        See predicted usage, risk level, recommendations, and requests for the selected router.
       </Text>
+
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Selected Router</Text>
+        <Text style={[styles.itemTitle, { color: colors.text }]}>
+          {getRouterDisplayName(selectedRouter)}
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Service line:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.subscription_label ??
+              getRouterDisplayName(selectedRouter)}
+          </Text>
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Package:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.plan.plan_name ?? "Unknown package"}
+          </Text>
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Insights below are filtered to this router's independent service line.
+        </Text>
+      </View>
 
       {errorMessage ? (
         <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
@@ -370,8 +482,8 @@ export function InsightsScreen() {
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Predictions</Text>
 
-        {data?.predictions.length ? (
-          data.predictions.map((prediction) => (
+        {selectedPredictions.length ? (
+          selectedPredictions.map((prediction) => (
             <View key={prediction.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
               <View style={styles.itemHeader}>
                 <View style={styles.itemTitleGroup}>
@@ -488,7 +600,7 @@ export function InsightsScreen() {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {(
             [
-              { key: "all", label: `All (${data?.recommendations.length ?? 0})` },
+              { key: "all", label: `All (${selectedRecommendations.length})` },
               { key: "pending", label: "Pending" },
               { key: "accepted", label: "Accepted" },
               { key: "rejected", label: "Rejected" },
@@ -659,7 +771,7 @@ export function InsightsScreen() {
                         { color: primaryActionText },
                       ]}
                     >
-                      {isCreating ? "Sending..." : "Request plan change"}
+                      {isCreating ? "Sending..." : "Request for selected router"}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -680,7 +792,7 @@ export function InsightsScreen() {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {(
             [
-              { key: "all", label: `All (${data?.planChangeRequests.length ?? 0})` },
+              { key: "all", label: `All (${selectedPlanChangeRequests.length})` },
               { key: "pending", label: "Pending" },
               { key: "approved", label: "Approved" },
               { key: "rejected", label: "Rejected" },
