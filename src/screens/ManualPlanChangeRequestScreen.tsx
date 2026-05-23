@@ -14,6 +14,7 @@ import {
   createMyPlanChangeRequest,
   getMyAvailablePlans,
   getMyPlanChangeRequests,
+  getMyRouters,
   getMySubscriptions,
   type MySubscriptionRequestType,
 } from "../api/appUser";
@@ -22,6 +23,7 @@ import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
   DecimalLike,
   MyPlanChangeRequest,
+  MyRouter,
   MySubscription,
   MySubscriptionPlanSummary,
 } from "../types/appUser";
@@ -30,6 +32,11 @@ type ServiceRequestMode =
   | "change_plan"
   | "suspend_subscription"
   | "suspend_account";
+
+type ManualPlanChangeRequestScreenProps = {
+  selectedRouterId?: string | null;
+  onSelectedRouterChange?: (routerId: string | null) => void;
+};
 
 const requestModeOptions: Array<{
   value: ServiceRequestMode;
@@ -78,6 +85,10 @@ function formatMbps(value: DecimalLike | null) {
 
 function formatLabel(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function getRouterDisplayName(router: MyRouter) {
+  return router.router_name ?? router.router_model ?? "Unnamed router";
 }
 
 function getPlanRequestType(
@@ -134,13 +145,14 @@ function getBackendRequestType(
   return getPlanRequestType(subscription, plan);
 }
 
-export function ManualPlanChangeRequestScreen() {
+export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRouterChange }: ManualPlanChangeRequestScreenProps = {}) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [requestMode, setRequestMode] =
     useState<ServiceRequestMode>("change_plan");
   const [subscriptions, setSubscriptions] = useState<MySubscription[]>([]);
+  const [routers, setRouters] = useState<MyRouter[]>([]);
   const [plans, setPlans] = useState<MySubscriptionPlanSummary[]>([]);
   const [requests, setRequests] = useState<MyPlanChangeRequest[]>([]);
   const [selectedSubscriptionId, setSelectedSubscriptionId] =
@@ -165,18 +177,28 @@ export function ManualPlanChangeRequestScreen() {
       setErrorMessage(null);
       setSuccessMessage(null);
 
-      const [subscriptionsResult, plansResult, requestsResult] =
+      const [subscriptionsResult, plansResult, requestsResult, routersResult] =
         await Promise.all([
           getMySubscriptions(),
           getMyAvailablePlans(),
           getMyPlanChangeRequests(20),
+          getMyRouters(),
         ]);
 
       setSubscriptions(subscriptionsResult);
+      setRouters(routersResult);
       setPlans(plansResult);
       setRequests(requestsResult);
 
       setSelectedSubscriptionId((current) => {
+        const routerFromSharedSelection = selectedRouterId
+          ? routersResult.find((router) => router.id === selectedRouterId)
+          : null;
+
+        if (routerFromSharedSelection?.user_subscription_id) {
+          return routerFromSharedSelection.user_subscription_id;
+        }
+
         if (current && subscriptionsResult.some((item) => item.id === current)) {
           return current;
         }
@@ -197,11 +219,24 @@ export function ManualPlanChangeRequestScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedRouterId]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // sync selected subscription from selected router
+  useEffect(() => {
+    if (!selectedRouterId) {
+      return;
+    }
+
+    const router = routers.find((item) => item.id === selectedRouterId);
+
+    if (router?.user_subscription_id) {
+      setSelectedSubscriptionId(router.user_subscription_id);
+    }
+  }, [routers, selectedRouterId]);
 
   const selectedSubscription = useMemo(
     () =>
@@ -210,6 +245,43 @@ export function ManualPlanChangeRequestScreen() {
       ) ?? null,
     [selectedSubscriptionId, subscriptions]
   );
+
+  const selectedRouter = useMemo(() => {
+    const sharedRouter = selectedRouterId
+      ? routers.find((router) => router.id === selectedRouterId)
+      : null;
+
+    if (sharedRouter) {
+      return sharedRouter;
+    }
+
+    if (!selectedSubscriptionId) {
+      return null;
+    }
+
+    return (
+      routers.find(
+        (router) => router.user_subscription_id === selectedSubscriptionId
+      ) ?? null
+    );
+  }, [routers, selectedRouterId, selectedSubscriptionId]);
+
+  const routersForSelectedSubscription = useMemo(() => {
+    if (!selectedSubscriptionId) {
+      return [];
+    }
+
+    return routers.filter(
+      (router) => router.user_subscription_id === selectedSubscriptionId
+    );
+  }, [routers, selectedSubscriptionId]);
+
+  function getRouterForSubscription(subscriptionId: string) {
+    return (
+      routers.find((router) => router.user_subscription_id === subscriptionId) ??
+      null
+    );
+  }
 
   const availableTargetPlans = useMemo(() => {
     if (!selectedSubscription) {
@@ -255,12 +327,19 @@ export function ManualPlanChangeRequestScreen() {
     confirmationText.trim().toUpperCase() === requiredConfirmation;
 
   const canSubmit =
+    Boolean(selectedRouter) &&
     Boolean(selectedSubscription) &&
     confirmationMatches &&
     reason.trim().length >= 5 &&
     (requestMode !== "change_plan" || Boolean(selectedPlan));
 
   async function handleSubmit() {
+    if (!selectedRouter) {
+      setErrorMessage("Select a router first from the Routers screen.");
+      setSuccessMessage(null);
+      return;
+    }
+
     if (!selectedSubscription) {
       setErrorMessage("Select a subscription first.");
       setSuccessMessage(null);
@@ -339,8 +418,9 @@ export function ManualPlanChangeRequestScreen() {
       <Text style={styles.eyebrow}>Service Request</Text>
       <Text style={styles.title}>Request account or plan changes</Text>
       <Text style={styles.subtitle}>
-        Choose what you need, explain the reason, then type the confirmation
-        phrase. Your ISP Admin must approve the request before anything changes.
+        Choose the exact router/service line you want to change, explain the
+        reason, then type the confirmation phrase. Your ISP Admin must approve
+        the request before anything changes.
       </Text>
 
       {errorMessage ? (
@@ -356,6 +436,29 @@ export function ManualPlanChangeRequestScreen() {
           <Text style={styles.successText}>{successMessage}</Text>
         </View>
       ) : null}
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Selected Router Context</Text>
+
+        {selectedRouter ? (
+          <>
+            <Text style={styles.cardTitle}>{getRouterDisplayName(selectedRouter)}</Text>
+            <Text style={styles.cardText}>
+              Package:{" "}
+              <Text style={styles.boldText}>
+                {selectedSubscription?.plan.plan_name ?? "Unknown package"}
+              </Text>
+            </Text>
+            <Text style={styles.smallText}>
+              This request will use this router's independent service line.
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.mutedText}>
+            No router is selected yet. Open Routers, tap a router, then return here.
+          </Text>
+        )}
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Request Type</Text>
@@ -385,42 +488,55 @@ export function ManualPlanChangeRequestScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>Current Subscription</Text>
+        <Text style={styles.cardLabel}>Selected Router</Text>
 
-        {subscriptions.length ? (
-          subscriptions.map((subscription) => {
-            const selected = selectedSubscriptionId === subscription.id;
+        {selectedRouter && selectedSubscription ? (
+          <>
+            <Text style={styles.cardTitle}>{getRouterDisplayName(selectedRouter)}</Text>
 
-            return (
-              <Pressable
-                key={subscription.id}
-                style={[styles.optionRow, selected && styles.selectedOption]}
-                onPress={() => setSelectedSubscriptionId(subscription.id)}
-              >
-                <View style={styles.optionHeader}>
-                  <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={styles.optionTitle}>
-                      {subscription.subscription_label ??
-                        subscription.plan.plan_name}
-                    </Text>
-                    <Text style={styles.smallText}>
-                      {subscription.plan.plan_name} -{" "}
-                      {formatGb(subscription.plan.data_limit_gb)} -{" "}
-                      {formatMoney(subscription.plan.monthly_price)}
-                    </Text>
-                  </View>
+            <Text style={styles.cardText}>
+              Service line:{" "}
+              <Text style={styles.boldText}>
+                {selectedSubscription.subscription_label ??
+                  getRouterDisplayName(selectedRouter)}
+              </Text>
+            </Text>
 
-                  <Text style={[styles.statusPill, selected && styles.activePill]}>
-                    {selected ? "Selected" : formatLabel(subscription.status)}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })
+            <Text style={styles.cardText}>
+              Package:{" "}
+              <Text style={styles.boldText}>
+                {selectedSubscription.plan.plan_name}
+              </Text>
+            </Text>
+
+            <Text style={styles.smallText}>
+              {formatGb(selectedSubscription.plan.data_limit_gb)} -{" "}
+              {formatMoney(selectedSubscription.plan.monthly_price)}
+            </Text>
+
+            <View style={styles.warningBox}>
+              <Text style={styles.warningTitle}>Router locked for this request</Text>
+              <Text style={styles.warningText}>
+                This request will affect only the selected router's independent
+                service line. To change the router, open Routers and tap another
+                router before submitting.
+              </Text>
+            </View>
+
+            {onSelectedRouterChange ? (
+              <Text style={styles.smallText}>
+                Current selected router is shared from the Routers screen.
+              </Text>
+            ) : null}
+          </>
         ) : (
-          <Text style={styles.mutedText}>
-            No subscriptions found for this account.
-          </Text>
+          <View style={styles.warningBox}>
+            <Text style={styles.warningTitle}>No router selected</Text>
+            <Text style={styles.warningText}>
+              Open Routers, tap the router you want to manage, then return here
+              to create a request for that router.
+            </Text>
+          </View>
         )}
       </View>
 
@@ -476,13 +592,26 @@ export function ManualPlanChangeRequestScreen() {
         </Text>
 
         <Text style={styles.cardText}>
-          Subscription:{" "}
+          Router/service line:{" "}
           <Text style={styles.boldText}>
             {selectedSubscription?.subscription_label ??
               selectedSubscription?.plan.plan_name ??
               "No subscription selected"}
           </Text>
         </Text>
+
+        {selectedRouter ? (
+          <Text style={styles.cardText}>
+            Linked router:{" "}
+            <Text style={styles.boldText}>{getRouterDisplayName(selectedRouter)}</Text>
+          </Text>
+        ) : null}
+
+        {routersForSelectedSubscription.length > 1 ? (
+          <Text style={styles.warningText}>
+            Warning: more than one router is linked to this service line.
+          </Text>
+        ) : null}
 
         {requestMode === "change_plan" ? (
           <Text style={styles.cardText}>

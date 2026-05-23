@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -70,6 +70,7 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeSection, setActiveSection] = useState<MoreSection>("plans");
+  const [selectedRouterId, setSelectedRouterId] = useState<string | null>(null);
 
   if (activeSection === "plans") {
     return (
@@ -90,7 +91,7 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
           activeSection={activeSection}
           onChangeSection={setActiveSection}
         />
-        <RoutersScreen />
+        <RoutersScreen selectedRouterId={selectedRouterId} onSelectedRouterChange={setSelectedRouterId} />
       </View>
     );
   }
@@ -102,7 +103,7 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
           activeSection={activeSection}
           onChangeSection={setActiveSection}
         />
-        <ManualPlanChangeRequestScreen />
+        <ManualPlanChangeRequestScreen selectedRouterId={selectedRouterId} onSelectedRouterChange={setSelectedRouterId} />
       </View>
     );
   }

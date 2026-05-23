@@ -13,9 +13,14 @@ import {
   getMyRouter,
   getMyRouterCapabilities,
   getMyRouters,
+  getMySubscriptions,
 } from "../api/appUser";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
-import type { MyRouter, MyRouterCapabilities } from "../types/appUser";
+import type {
+  MyRouter,
+  MyRouterCapabilities,
+  MySubscription,
+} from "../types/appUser";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
@@ -41,6 +46,11 @@ function getRouterModeLabel(capabilities: MyRouterCapabilities | null | undefine
   return `${formatLabel(capabilities.integration_mode)} mode`;
 }
 
+type RoutersScreenProps = {
+  selectedRouterId?: string | null;
+  onSelectedRouterChange?: (routerId: string | null) => void;
+};
+
 function capabilityRows(capabilities: MyRouterCapabilities | null | undefined) {
   if (!capabilities) {
     return [
@@ -57,11 +67,12 @@ function capabilityRows(capabilities: MyRouterCapabilities | null | undefined) {
   ];
 }
 
-export function RoutersScreen() {
+export function RoutersScreen({ selectedRouterId, onSelectedRouterChange }: RoutersScreenProps = {}) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [routers, setRouters] = useState<MyRouter[]>([]);
+  const [subscriptions, setSubscriptions] = useState<MySubscription[]>([]);
   const [selectedRouter, setSelectedRouter] = useState<MyRouter | null>(null);
   const [capabilitiesByRouterId, setCapabilitiesByRouterId] = useState<
     Record<string, MyRouterCapabilities | null>
@@ -81,7 +92,10 @@ export function RoutersScreen() {
 
       setErrorMessage(null);
 
-      const result = await getMyRouters();
+      const [result, subscriptionResult] = await Promise.all([
+        getMyRouters(),
+        getMySubscriptions(),
+      ]);
 
       const capabilityEntries = await Promise.all(
         result.map(async (router) => {
@@ -104,9 +118,18 @@ export function RoutersScreen() {
         );
 
       setRouters(result);
+      setSubscriptions(subscriptionResult);
       setCapabilitiesByRouterId(capabilityMap);
 
       setSelectedRouter((currentSelected) => {
+        const sharedSelectedRouter = selectedRouterId
+          ? result.find((router) => router.id === selectedRouterId)
+          : null;
+
+        if (sharedSelectedRouter) {
+          return sharedSelectedRouter;
+        }
+
         if (!currentSelected) {
           return result[0] ?? null;
         }
@@ -125,15 +148,50 @@ export function RoutersScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedRouterId]);
 
   useEffect(() => {
     void loadRouters();
   }, [loadRouters]);
 
+  // sync shared selected router when navigating back from another More section
+  useEffect(() => {
+    if (!selectedRouterId) {
+      return;
+    }
+
+    const matchingRouter = routers.find((router) => router.id === selectedRouterId);
+
+    if (matchingRouter) {
+      setSelectedRouter(matchingRouter);
+    }
+  }, [routers, selectedRouterId]);
+
   const selectedCapabilities = selectedRouter
     ? capabilitiesByRouterId[selectedRouter.id]
     : null;
+
+  const subscriptionById = useMemo(() => {
+    return new Map(
+      subscriptions.map((subscription) => [subscription.id, subscription])
+    );
+  }, [subscriptions]);
+
+  function getRouterServiceLabel(router: MyRouter) {
+    if (!router.user_subscription_id) {
+      return "No service line linked";
+    }
+
+    const subscription = subscriptionById.get(router.user_subscription_id);
+
+    if (!subscription) {
+      return router.user_subscription_id;
+    }
+
+    return `${
+      subscription.subscription_label ?? getRouterDisplayName(router)
+    } / ${subscription.plan.plan_name} / ${formatLabel(subscription.status)}`;
+  }
 
   const simulatorCount = useMemo(
     () =>
@@ -153,6 +211,7 @@ export function RoutersScreen() {
       ]);
 
       setSelectedRouter(detail);
+      onSelectedRouterChange?.(detail.id);
       setRouters((currentRouters) =>
         currentRouters.map((item) => (item.id === detail.id ? detail : item))
       );
@@ -162,6 +221,7 @@ export function RoutersScreen() {
       }));
     } catch (error) {
       setSelectedRouter(router);
+      onSelectedRouterChange?.(router.id);
       setErrorMessage(
         error instanceof Error ? error.message : "Could not load router details."
       );
@@ -254,9 +314,9 @@ export function RoutersScreen() {
 
           <View style={styles.metaList}>
             <Text style={styles.cardText}>
-              Subscription ID:{" "}
+              Service line:{" "}
               <Text style={styles.boldText}>
-                {selectedRouter.user_subscription_id ?? "Not linked"}
+                {getRouterServiceLabel(selectedRouter)}
               </Text>
             </Text>
             <Text style={styles.smallText}>
@@ -309,6 +369,9 @@ export function RoutersScreen() {
                     </Text>
                     <Text style={styles.smallText}>
                       {router.router_model ?? "Unknown model"}
+                    </Text>
+                    <Text style={styles.smallText}>
+                      {getRouterServiceLabel(router)}
                     </Text>
                   </View>
 
