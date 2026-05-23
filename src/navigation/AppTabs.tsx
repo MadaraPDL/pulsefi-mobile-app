@@ -9,6 +9,7 @@ import { HomeScreen } from "../screens/HomeScreen";
 import { MoreScreen } from "../screens/MoreScreen";
 import { UsageScreen } from "../screens/UsageScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { SelectedRouterProvider } from "../state/SelectedRouterContext";
 import type { AppUserSession } from "../types/appUser";
 import type { AppTabParamList } from "./types";
 
@@ -53,7 +54,8 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
   const bottomPadding = Math.max(insets.bottom, 12);
 
   return (
-    <Tab.Navigator
+    <SelectedRouterProvider>
+      <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: true,
         headerStyle: {
@@ -100,6 +102,7 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
       <Tab.Screen name="More">
         {() => <MoreScreen session={session} onLogout={onLogout} />}
       </Tab.Screen>
-    </Tab.Navigator>
+      </Tab.Navigator>
+    </SelectedRouterProvider>
   );
 }

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,10 +9,18 @@ import {
   View,
 } from "react-native";
 
-import { getMyUsageRecords, getMyUsageSummary } from "../api/appUser";
+import {
+  getMyRouters,
+  getMySubscriptions,
+  getMyUsageRecords,
+  getMyUsageSummary,
+} from "../api/appUser";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 import type {
   DecimalLike,
+  MyRouter,
+  MySubscription,
   MyUsageRecord,
   MyUsageSummary,
 } from "../types/appUser";
@@ -20,6 +28,8 @@ import type {
 type UsageData = {
   summary: MyUsageSummary;
   records: MyUsageRecord[];
+  routers: MyRouter[];
+  subscriptions: MySubscription[];
 };
 
 type UsageFilter = "all" | "official" | "estimated";
@@ -79,8 +89,30 @@ function getUsageKindHelp(kind: Exclude<UsageFilter, "all">) {
   return "This is device-level usage estimated from router/CPE data when the router supports device visibility.";
 }
 
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
+}
+
+function sumUsageRecords(records: MyUsageRecord[]) {
+  return records.reduce(
+    (totals, record) => ({
+      total_mb: totals.total_mb + toNumber(record.total_mb),
+      download_mb: totals.download_mb + toNumber(record.download_mb),
+      upload_mb: totals.upload_mb + toNumber(record.upload_mb),
+      record_count: totals.record_count + 1,
+    }),
+    {
+      total_mb: 0,
+      download_mb: 0,
+      upload_mb: 0,
+      record_count: 0,
+    }
+  );
+}
+
 export function UsageScreen() {
   const { colors } = usePulseFiTheme();
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
@@ -100,12 +132,14 @@ export function UsageScreen() {
 
       setErrorMessage(null);
 
-      const [summary, records] = await Promise.all([
+      const [summary, records, routers, subscriptions] = await Promise.all([
         getMyUsageSummary(),
-        getMyUsageRecords(50),
+        getMyUsageRecords(100),
+        getMyRouters(),
+        getMySubscriptions(),
       ]);
 
-      setData({ summary, records });
+      setData({ summary, records, routers, subscriptions });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -122,7 +156,43 @@ export function UsageScreen() {
     void loadUsage();
   }, [loadUsage]);
 
-  const records = data?.records ?? [];
+  const selectedRouter = useMemo(() => {
+    if (!data?.routers.length) {
+      return null;
+    }
+
+    return (
+      data.routers.find((router) => router.id === selectedRouterId) ??
+      data.routers[0]
+    );
+  }, [data?.routers, selectedRouterId]);
+
+  useEffect(() => {
+    if (!selectedRouterId && selectedRouter) {
+      setSelectedRouterId(selectedRouter.id);
+    }
+  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+  const selectedSubscription = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return null;
+    }
+
+    return (
+      data?.subscriptions.find(
+        (subscription) => subscription.id === selectedRouter.user_subscription_id
+      ) ?? null
+    );
+  }, [data?.subscriptions, selectedRouter]);
+
+  const records = selectedRouter
+    ? (data?.records ?? []).filter((record) => record.router_id === selectedRouter.id)
+    : data?.records ?? [];
+  const selectedRouterTotals = useMemo(
+    () => sumUsageRecords(records),
+    [records]
+  );
+
   const officialRecords = records.filter(
     (record) => getUsageRecordKind(record) === "official"
   );
@@ -182,8 +252,7 @@ export function UsageScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Usage</Text>
       <Text style={[styles.title, { color: colors.text }]}>Usage history</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Track your official subscription usage separately from estimated
-        per-device usage.
+        Track usage for the currently selected router/service line.
       </Text>
 
       {errorMessage ? (
@@ -204,6 +273,33 @@ export function UsageScreen() {
           </Text>
         </View>
       ) : null}
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Selected Router
+        </Text>
+        <Text style={[styles.recordTitle, { color: colors.text }]}>
+          {getRouterDisplayName(selectedRouter)}
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Service line:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.subscription_label ??
+              getRouterDisplayName(selectedRouter)}
+          </Text>
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Package:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.plan.plan_name ?? "Unknown package"}
+          </Text>
+        </Text>
+      </View>
 
       <View
         style={[
@@ -231,10 +327,10 @@ export function UsageScreen() {
         ]}
       >
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Official Usage Summary
+          Selected Router Usage Summary
         </Text>
         <Text style={[styles.bigNumber, { color: colors.text }]}>
-          {data ? formatMb(data.summary.totals.total_mb) : "0 MB"}
+          {formatMb(selectedRouterTotals.total_mb)}
         </Text>
 
         <View style={styles.metricRow}>
@@ -251,7 +347,7 @@ export function UsageScreen() {
               Download
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
-              {data ? formatMb(data.summary.totals.download_mb) : "0 MB"}
+              {formatMb(selectedRouterTotals.download_mb)}
             </Text>
           </View>
 
@@ -268,13 +364,13 @@ export function UsageScreen() {
               Upload
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
-              {data ? formatMb(data.summary.totals.upload_mb) : "0 MB"}
+              {formatMb(selectedRouterTotals.upload_mb)}
             </Text>
           </View>
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Records in summary: {data?.summary.totals.record_count ?? 0}
+          Records for selected router: {selectedRouterTotals.record_count}
         </Text>
       </View>
 

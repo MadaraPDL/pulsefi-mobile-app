@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -10,9 +10,20 @@ import {
 } from "react-native";
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 
-import { getMyAlert, getMyAlerts, markMyAlertAsRead } from "../api/appUser";
-import type { MyAlert } from "../types/appUser";
+import {
+  getMyAlert,
+  getMyAlerts,
+  getMyRouters,
+  getMySubscriptions,
+  markMyAlertAsRead,
+} from "../api/appUser";
+import type {
+  MyAlert,
+  MyRouter,
+  MySubscription,
+} from "../types/appUser";
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
@@ -24,6 +35,10 @@ function formatLabel(value: string) {
 
 function isUnread(alert: MyAlert) {
   return alert.read_at === null && alert.status !== "read";
+}
+
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
 type AlertFilter = "all" | "unread" | "read" | "high";
@@ -59,10 +74,13 @@ function getSeverityStyle(
 
 export function AlertsScreen() {
   const { colors } = usePulseFiTheme();
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [alerts, setAlerts] = useState<MyAlert[]>([]);
+  const [routers, setRouters] = useState<MyRouter[]>([]);
+  const [subscriptions, setSubscriptions] = useState<MySubscription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [updatingAlertId, setUpdatingAlertId] = useState<string | null>(null);
@@ -82,8 +100,15 @@ export function AlertsScreen() {
 
       setErrorMessage(null);
 
-      const result = await getMyAlerts(50);
+      const [result, routerResult, subscriptionResult] = await Promise.all([
+        getMyAlerts(50),
+        getMyRouters(),
+        getMySubscriptions(),
+      ]);
+
       setAlerts(result);
+      setRouters(routerResult);
+      setSubscriptions(subscriptionResult);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -100,12 +125,50 @@ export function AlertsScreen() {
     void loadAlerts();
   }, [loadAlerts]);
 
+  const selectedRouter = useMemo(() => {
+    if (!routers.length) {
+      return null;
+    }
+
+    return (
+      routers.find((router) => router.id === selectedRouterId) ?? routers[0]
+    );
+  }, [routers, selectedRouterId]);
+
+  useEffect(() => {
+    if (!selectedRouterId && selectedRouter) {
+      setSelectedRouterId(selectedRouter.id);
+    }
+  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+  const selectedSubscription = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return null;
+    }
+
+    return (
+      subscriptions.find(
+        (subscription) => subscription.id === selectedRouter.user_subscription_id
+      ) ?? null
+    );
+  }, [selectedRouter, subscriptions]);
+
+  const routerAlerts = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return alerts;
+    }
+
+    return alerts.filter(
+      (alert) => alert.user_subscription_id === selectedRouter.user_subscription_id
+    );
+  }, [alerts, selectedRouter]);
+
   const unreadCount = useMemo(() => {
-    return alerts.filter(isUnread).length;
-  }, [alerts]);
+    return routerAlerts.filter(isUnread).length;
+  }, [routerAlerts]);
 
   const filteredAlerts = useMemo(() => {
-    return alerts.filter((alert) => {
+    return routerAlerts.filter((alert) => {
       if (alertFilter === "all") {
         return true;
       }
@@ -121,7 +184,7 @@ export function AlertsScreen() {
       const severity = alert.severity.toLowerCase();
       return severity === "high" || severity === "critical";
     });
-  }, [alertFilter, alerts]);
+  }, [alertFilter, routerAlerts]);
 
   async function handleViewAlertDetail(alertId: string) {
     if (selectedAlert?.id === alertId) {
@@ -201,8 +264,31 @@ export function AlertsScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Alerts</Text>
       <Text style={[styles.title, { color: colors.text }]}>Network alerts</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Review high usage, device, prediction, and policy alerts.
+        Review high usage, device, prediction, and policy alerts for the selected router.
       </Text>
+
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Selected Router</Text>
+        <Text style={[styles.alertTitle, { color: colors.text }]}>
+          {getRouterDisplayName(selectedRouter)}
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Service line:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.subscription_label ??
+              getRouterDisplayName(selectedRouter)}
+          </Text>
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Package:{" "}
+          <Text style={{ color: colors.text, fontWeight: "900" }}>
+            {selectedSubscription?.plan.plan_name ?? "Unknown package"}
+          </Text>
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Alerts below are filtered to this router's service line.
+        </Text>
+      </View>
 
       {errorMessage ? (
         <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
@@ -223,11 +309,11 @@ export function AlertsScreen() {
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {(
             [
-              { key: "all", label: `All (${alerts.length})` },
+              { key: "all", label: `All (${routerAlerts.length})` },
               { key: "unread", label: `Unread (${unreadCount})` },
               {
                 key: "read",
-                label: `Read (${alerts.length - unreadCount})`,
+                label: `Read (${routerAlerts.length - unreadCount})`,
               },
               { key: "high", label: "High severity" },
             ] as Array<{ key: AlertFilter; label: string }>

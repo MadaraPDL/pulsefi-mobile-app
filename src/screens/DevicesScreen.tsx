@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 
 import {
   createBandwidthLimitPolicy,
@@ -23,7 +24,9 @@ import {
   getMyDevices,
   getMyDeviceUsage,
   getMyDeviceUsageList,
+  getMyRouters,
   getMyRouterCapabilities,
+  getMySubscriptions,
   updateMyDeviceTrust,
 } from "../api/appUser";
 import type {
@@ -31,7 +34,9 @@ import type {
   MyDevice,
   MyDevicePolicy,
   MyDeviceUsage,
+  MyRouter,
   MyRouterCapabilities,
+  MySubscription,
   MyUsageTotals,
 } from "../types/appUser";
 
@@ -39,6 +44,8 @@ type DevicesData = {
   devices: MyDevice[];
   deviceUsage: MyDeviceUsage[];
   policies: MyDevicePolicy[];
+  routers: MyRouter[];
+  subscriptions: MySubscription[];
   routerCapabilities: Record<string, MyRouterCapabilities | null>;
 };
 
@@ -97,6 +104,10 @@ function formatLabel(value: string) {
 
 function getDeviceDisplayName(device: MyDevice) {
   return device.device_name ?? device.device_type ?? "Unnamed device";
+}
+
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
 function getRouterModeLabel(capabilities: MyRouterCapabilities | null | undefined) {
@@ -368,6 +379,7 @@ function DevicePolicies({
 
 export function DevicesScreen() {
   const { colors } = usePulseFiTheme();
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground = getPrimaryActionBackground(colors);
   const primaryActionText = getPrimaryActionText(colors);
   const [data, setData] = useState<DevicesData | null>(null);
@@ -404,11 +416,14 @@ export function DevicesScreen() {
 
       setErrorMessage(null);
 
-      const [devices, deviceUsage, policies] = await Promise.all([
-        getMyDevices(50),
-        getMyDeviceUsageList(50),
-        getMyDevicePolicies(50),
-      ]);
+      const [devices, deviceUsage, policies, routers, subscriptions] =
+        await Promise.all([
+          getMyDevices(50),
+          getMyDeviceUsageList(50),
+          getMyDevicePolicies(50),
+          getMyRouters(),
+          getMySubscriptions(),
+        ]);
 
       const routerIds = Array.from(
         new Set(devices.map((device) => device.router_id))
@@ -434,7 +449,14 @@ export function DevicesScreen() {
           {}
         );
 
-      setData({ devices, deviceUsage, policies, routerCapabilities });
+      setData({
+        devices,
+        deviceUsage,
+        policies,
+        routers,
+        subscriptions,
+        routerCapabilities,
+      });
 
       setLimitDrafts((currentDrafts) => {
         const nextDrafts = { ...currentDrafts };
@@ -465,6 +487,35 @@ export function DevicesScreen() {
   useEffect(() => {
     void loadDevices();
   }, [loadDevices]);
+
+  const selectedRouter = useMemo(() => {
+    if (!data?.routers.length) {
+      return null;
+    }
+
+    return (
+      data.routers.find((router) => router.id === selectedRouterId) ??
+      data.routers[0]
+    );
+  }, [data?.routers, selectedRouterId]);
+
+  useEffect(() => {
+    if (!selectedRouterId && selectedRouter) {
+      setSelectedRouterId(selectedRouter.id);
+    }
+  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+  const selectedSubscription = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return null;
+    }
+
+    return (
+      data?.subscriptions.find(
+        (subscription) => subscription.id === selectedRouter.user_subscription_id
+      ) ?? null
+    );
+  }, [data?.subscriptions, selectedRouter]);
 
   const usageByDeviceId = useMemo(() => {
     const map = new Map<string, MyDeviceUsage>();
@@ -502,6 +553,9 @@ export function DevicesScreen() {
         .join(" ")
         .toLowerCase();
 
+      const matchesSelectedRouter =
+        !selectedRouter || device.router_id === selectedRouter.id;
+
       const matchesSearch = !search || searchableText.includes(search);
 
       const matchesTrust =
@@ -517,9 +571,20 @@ export function DevicesScreen() {
         (deviceStatusFilter === "not_connected" &&
           normalizedStatus !== "connected");
 
-      return matchesSearch && matchesTrust && matchesStatus;
+      return (
+        matchesSelectedRouter &&
+        matchesSearch &&
+        matchesTrust &&
+        matchesStatus
+      );
     });
-  }, [data?.devices, deviceSearch, deviceStatusFilter, deviceTrustFilter]);
+  }, [
+    data?.devices,
+    deviceSearch,
+    deviceStatusFilter,
+    deviceTrustFilter,
+    selectedRouter,
+  ]);
 
   function updateLimitDraft(
     deviceId: string,
@@ -878,9 +943,34 @@ export function DevicesScreen() {
       ) : null}
 
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Selected Router</Text>
+        <Text style={[styles.deviceTitle, { color: colors.text }]}>
+          {getRouterDisplayName(selectedRouter)}
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Service line:{" "}
+          <Text style={[styles.boldText, { color: colors.textMuted }]}>
+            {selectedSubscription?.subscription_label ??
+              getRouterDisplayName(selectedRouter)}
+          </Text>
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          Package:{" "}
+          <Text style={[styles.boldText, { color: colors.textMuted }]}>
+            {selectedSubscription?.plan.plan_name ?? "Unknown package"}
+          </Text>
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Devices and policies below are filtered to this router.
+        </Text>
+      </View>
+
+      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Overview</Text>
-        <Text style={[styles.bigNumber, { color: colors.text }]}>{data?.devices.length ?? 0}</Text>
-        <Text style={[styles.cardText, { color: colors.textMuted }]}>known devices on your account</Text>
+        <Text style={[styles.bigNumber, { color: colors.text }]}>{filteredDevices.length}</Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          known devices on selected router
+        </Text>
       </View>
 
       <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -984,15 +1074,19 @@ export function DevicesScreen() {
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Showing {filteredDevices.length} of {data?.devices.length ?? 0} devices.
+          Showing {filteredDevices.length} devices for selected router.
         </Text>
 
         {filteredDevices.length ? (
           filteredDevices.map((device) => {
             const usage = usageByDeviceId.get(device.id)?.usage;
             const policies = policiesByDeviceId.get(device.id) ?? [];
-            const pendingPolicies = policies.filter(
-              (policy) => policy.status === "pending"
+            const pendingPolicies = [
+              getLatestPolicy(policies, "bandwidth_limit"),
+              getLatestPolicy(policies, "device_priority"),
+            ].filter(
+              (policy): policy is MyDevicePolicy =>
+                Boolean(policy) && policy.status === "pending"
             );
             const isWorkingOnDevice = workingDeviceId === device.id;
             const draft = limitDrafts[device.id] ?? {
@@ -1361,6 +1455,10 @@ export function DevicesScreen() {
                           disabled={isExecuting}
                           style={[
                             styles.primaryButton,
+                            {
+                              backgroundColor: primaryActionBackground,
+                              borderColor: colors.primary,
+                            },
                             isExecuting && styles.buttonDisabled,
                           ]}
                           onPress={() => void handleExecutePolicy(policy.id)}
@@ -1373,7 +1471,9 @@ export function DevicesScreen() {
                           >
                             {isExecuting
                               ? "Executing..."
-                              : `Execute ${formatLabel(policy.policy_type)}`}
+                              : policy.policy_type === "bandwidth_limit"
+                                ? "Apply bandwidth limit"
+                                : "Apply high priority"}
                           </Text>
                         </Pressable>
                       );

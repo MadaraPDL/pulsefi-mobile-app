@@ -14,6 +14,7 @@ import { ProfileScreen } from "./ProfileScreen";
 import { RoutersScreen } from "./RoutersScreen";
 import { SubscriptionsScreen } from "./SubscriptionsScreen";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 import type { AppUserSession } from "../types/appUser";
 
 type MoreSection =
@@ -70,7 +71,7 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeSection, setActiveSection] = useState<MoreSection>("plans");
-  const [selectedRouterId, setSelectedRouterId] = useState<string | null>(null);
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
 
   if (activeSection === "plans") {
     return (

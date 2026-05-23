@@ -9,23 +9,27 @@ import {
 } from "react-native";
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
 
 import {
+  getMyRouters,
   getMySubscriptions,
   getMySummary,
-  getMyUsageSummary,
+  getMyUsageRecords,
 } from "../api/appUser";
 import type {
   AppUserSummary,
   DecimalLike,
+  MyRouter,
   MySubscription,
-  MyUsageSummary,
+  MyUsageRecord,
 } from "../types/appUser";
 
 type DashboardData = {
   summary: AppUserSummary;
   subscriptions: MySubscription[];
-  usageSummary: MyUsageSummary;
+  routers: MyRouter[];
+  usageRecords: MyUsageRecord[];
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -33,7 +37,7 @@ function toNumber(value: DecimalLike | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatMb(value: DecimalLike) {
+function formatMb(value: DecimalLike | number) {
   const mb = toNumber(value);
 
   if (mb >= 1024) {
@@ -55,8 +59,30 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString();
 }
 
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
+}
+
+function sumUsage(records: MyUsageRecord[]) {
+  return records.reduce(
+    (totals, record) => ({
+      total_mb: totals.total_mb + toNumber(record.total_mb),
+      download_mb: totals.download_mb + toNumber(record.download_mb),
+      upload_mb: totals.upload_mb + toNumber(record.upload_mb),
+      record_count: totals.record_count + 1,
+    }),
+    {
+      total_mb: 0,
+      download_mb: 0,
+      upload_mb: 0,
+      record_count: 0,
+    }
+  );
+}
+
 export function HomeScreen() {
   const { colors } = usePulseFiTheme();
+  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -72,16 +98,18 @@ export function HomeScreen() {
 
       setErrorMessage(null);
 
-      const [summary, subscriptions, usageSummary] = await Promise.all([
+      const [summary, subscriptions, routers, usageRecords] = await Promise.all([
         getMySummary(),
         getMySubscriptions(),
-        getMyUsageSummary(),
+        getMyRouters(),
+        getMyUsageRecords(100),
       ]);
 
       setData({
         summary,
         subscriptions,
-        usageSummary,
+        routers,
+        usageRecords,
       });
     } catch (error) {
       setErrorMessage(
@@ -99,15 +127,57 @@ export function HomeScreen() {
     void loadDashboard();
   }, [loadDashboard]);
 
-  const activeSubscription = useMemo(() => {
-    return data?.subscriptions.find((item) => item.status === "active") ?? null;
-  }, [data?.subscriptions]);
+  const selectedRouter = useMemo(() => {
+    if (!data?.routers.length) {
+      return null;
+    }
+
+    return (
+      data.routers.find((router) => router.id === selectedRouterId) ??
+      data.routers[0]
+    );
+  }, [data?.routers, selectedRouterId]);
+
+  useEffect(() => {
+    if (!selectedRouterId && selectedRouter) {
+      setSelectedRouterId(selectedRouter.id);
+    }
+  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+  const selectedSubscription = useMemo(() => {
+    if (!selectedRouter?.user_subscription_id) {
+      return null;
+    }
+
+    return (
+      data?.subscriptions.find(
+        (item) => item.id === selectedRouter.user_subscription_id
+      ) ?? null
+    );
+  }, [data?.subscriptions, selectedRouter]);
+
+  const selectedRouterUsageRecords = useMemo(() => {
+    if (!selectedRouter) {
+      return [];
+    }
+
+    return (data?.usageRecords ?? []).filter(
+      (record) => record.router_id === selectedRouter.id
+    );
+  }, [data?.usageRecords, selectedRouter]);
+
+  const selectedRouterTotals = useMemo(
+    () => sumUsage(selectedRouterUsageRecords),
+    [selectedRouterUsageRecords]
+  );
 
   if (isLoading && !data) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading your PulseFi dashboard...</Text>
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+          Loading your PulseFi dashboard...
+        </Text>
       </View>
     );
   }
@@ -115,7 +185,10 @@ export function HomeScreen() {
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={[
+        styles.container,
+        { backgroundColor: colors.background },
+      ]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
@@ -125,81 +198,168 @@ export function HomeScreen() {
       }
     >
       <View style={styles.header}>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>PulseFi Mobile</Text>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>
+          PulseFi Mobile
+        </Text>
         <Text style={[styles.title, { color: colors.text }]}>
           Welcome{data?.summary.full_name ? `, ${data.summary.full_name}` : ""}
         </Text>
         <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-          Monitor your subscription, usage, and internet status.
+          Monitor the selected router, service line, and usage.
         </Text>
       </View>
 
       {errorMessage ? (
-        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
-          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Could not refresh dashboard</Text>
-          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
+        <View
+          style={[
+            styles.errorCard,
+            {
+              backgroundColor: colors.dangerBackground,
+              borderColor: colors.dangerBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>
+            Could not refresh dashboard
+          </Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>
+            {errorMessage}
+          </Text>
         </View>
       ) : null}
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Total Usage</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Selected Router
+        </Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          {getRouterDisplayName(selectedRouter)}
+        </Text>
+
+        {selectedSubscription ? (
+          <>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
+              Service line:{" "}
+              <Text style={[styles.boldText, { color: colors.text }]}>
+                {selectedSubscription.subscription_label ??
+                  getRouterDisplayName(selectedRouter)}
+              </Text>
+            </Text>
+            <Text style={[styles.cardText, { color: colors.textMuted }]}>
+              Package:{" "}
+              <Text style={[styles.boldText, { color: colors.text }]}>
+                {selectedSubscription.plan.plan_name}
+              </Text>
+            </Text>
+          </>
+        ) : (
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+            Open More → Routers to select a router.
+          </Text>
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Selected Router Usage
+        </Text>
         <Text style={[styles.bigNumber, { color: colors.text }]}>
-          {data ? formatMb(data.usageSummary.totals.total_mb) : "0 MB"}
+          {formatMb(selectedRouterTotals.total_mb)}
         </Text>
 
         <View style={styles.metricRow}>
-          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Download</Text>
+          <View
+            style={[
+              styles.metricBox,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+              Download
+            </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
-              {data ? formatMb(data.usageSummary.totals.download_mb) : "0 MB"}
+              {formatMb(selectedRouterTotals.download_mb)}
             </Text>
           </View>
 
-          <View style={[styles.metricBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Upload</Text>
+          <View
+            style={[
+              styles.metricBox,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+              Upload
+            </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
-              {data ? formatMb(data.usageSummary.totals.upload_mb) : "0 MB"}
+              {formatMb(selectedRouterTotals.upload_mb)}
             </Text>
           </View>
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Records: {data?.usageSummary.totals.record_count ?? 0}
+          Records for this router: {selectedRouterTotals.record_count}
         </Text>
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Active Subscription</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Selected Service Line
+        </Text>
 
-        {activeSubscription ? (
+        {selectedSubscription ? (
           <>
             <Text style={[styles.cardTitle, { color: colors.text }]}>
-              {activeSubscription.subscription_label ??
-                activeSubscription.plan.plan_name}
+              {selectedSubscription.subscription_label ??
+                selectedSubscription.plan.plan_name}
             </Text>
             <Text style={[styles.cardText, { color: colors.textMuted }]}>
-              Plan: {activeSubscription.plan.plan_name}
+              Plan: {selectedSubscription.plan.plan_name}
             </Text>
             <Text style={[styles.cardText, { color: colors.textMuted }]}>
-              Price: {formatMoney(activeSubscription.plan.monthly_price)}
+              Price: {formatMoney(selectedSubscription.plan.monthly_price)}
             </Text>
             <Text style={[styles.cardText, { color: colors.textMuted }]}>
-              Data limit: {toNumber(activeSubscription.plan.data_limit_gb)} GB
+              Data limit: {toNumber(selectedSubscription.plan.data_limit_gb)} GB
             </Text>
             <Text style={[styles.cardText, { color: colors.textMuted }]}>
-              Ends: {formatDate(activeSubscription.end_date)}
+              Ends: {formatDate(selectedSubscription.end_date)}
             </Text>
           </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No active subscription was found for this account.
+            No selected service line was found.
           </Text>
         )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Account</Text>
-        <Text style={[styles.cardTitle, { color: colors.text }]}>{data?.summary.email ?? "Unknown"}</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Account
+        </Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          {data?.summary.email ?? "Unknown"}
+        </Text>
         <Text style={[styles.cardText, { color: colors.textMuted }]}>
           Status: {data?.summary.status ?? "unknown"}
         </Text>
@@ -294,6 +454,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#33465B",
   },
+  boldText: {
+    fontWeight: "900",
+  },
   bigNumber: {
     fontSize: 38,
     fontWeight: "900",
@@ -308,6 +471,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
     backgroundColor: "#F6F8FB",
+    borderWidth: 1,
   },
   metricLabel: {
     fontSize: 12,
@@ -330,4 +494,3 @@ const styles = StyleSheet.create({
     color: "#6B7888",
   },
 });
-
