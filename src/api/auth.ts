@@ -119,6 +119,24 @@ export async function verifyAppUserMFA(payload: {
   return response;
 }
 
+
+export async function confirmAppUserMFASetup(payload: {
+  mfa_setup_token: string;
+  code: string;
+}): Promise<AppUserSession> {
+  const response = await apiRequest<AppUserSession>("/auth/mfa/setup/confirm", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify(payload),
+  });
+
+  if (!isAppUserSession(response)) {
+    throw new Error("This MFA setup did not return an App User session.");
+  }
+
+  return response;
+}
+
 export async function changeAppUserMFAChallengeMethod(payload: {
   challenge_token: string;
   method: MFAMethod;

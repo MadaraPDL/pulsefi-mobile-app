@@ -14,6 +14,7 @@ import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 
 import {
   changeAppUserMFAChallengeMethod,
+  confirmAppUserMFASetup,
   loginAppUser,
   verifyAppUserMFA,
 } from "../api/auth";
@@ -56,6 +57,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [activeChallenge, setActiveChallenge] =
     useState<MFARequiredResponse | null>(null);
   const [isBackupCodeMode, setIsBackupCodeMode] = useState(false);
@@ -91,6 +93,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         return;
       }
 
+      setSetupCode("");
       setStep({
         kind: "mfa_setup_required",
         setup: result.setup,
@@ -130,6 +133,32 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
   }
 
+
+  async function handleConfirmMFASetup() {
+    if (step.kind !== "mfa_setup_required") {
+      setErrorMessage("MFA setup is missing. Please sign in again.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setErrorMessage(null);
+
+      const session = await confirmAppUserMFASetup({
+        mfa_setup_token: step.setup.mfa_setup_token,
+        code: setupCode.trim().replace(/\s/g, ""),
+      });
+
+      await finishLogin(session);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not confirm MFA setup."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function handleChangeMFAMethod(method: MFAMethod) {
     if (!activeChallenge) {
       setErrorMessage("MFA challenge is missing. Please sign in again.");
@@ -161,6 +190,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     setStep({ kind: "credentials" });
     setActiveChallenge(null);
     setMfaCode("");
+    setSetupCode("");
     setIsBackupCodeMode(false);
     setErrorMessage(null);
   }
@@ -304,17 +334,6 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 />
               </View>
 
-              {activeChallenge.dev_email_code ? (
-                <View style={styles.devBox}>
-                  <Text style={[styles.devTitle, { color: "#F59E0B" }]}>
-                    Local DEBUG email code
-                  </Text>
-                  <Text style={[styles.devCode, { color: "#F59E0B" }]}>
-                    {activeChallenge.dev_email_code}
-                  </Text>
-                </View>
-              ) : null}
-
               {hasFallbackOptions ? (
                 <View style={styles.fallbackArea}>
                   <Text style={[styles.fallbackTitle, { color: colors.textMuted }]}>
@@ -390,23 +409,82 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           {step.kind === "mfa_setup_required" ? (
             <>
               <Text style={[styles.title, { color: colors.text }]}>
-                MFA setup required
+                Set up MFA
               </Text>
               <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-                This account requires authenticator MFA setup before mobile login.
-                Please complete setup from the admin-supported flow first, then
-                return to the mobile app.
+                Open your authenticator app, choose Add account or Enter setup
+                key, then use the PulseFi secret key below. After the app creates
+                a 6-digit code, enter it here to finish login.
               </Text>
 
-              <View style={styles.errorBox}>
-                <Text style={[styles.errorText, { color: colors.dangerText }]}>
-                  {step.setup.message}
+              <View
+                style={[
+                  styles.setupBox,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.setupLabel, { color: colors.textMuted }]}>
+                  Secret key
+                </Text>
+                <Text selectable style={[styles.setupSecret, { color: colors.text }]}>
+                  {step.setup.authenticator_secret.match(/.{1,4}/g)?.join(" ") ??
+                    step.setup.authenticator_secret}
+                </Text>
+                <Text style={[styles.setupHint, { color: colors.textMuted }]}>
+                  If the app asks for the type, choose Time-based or TOTP. Delete
+                  any old PulseFi entry before adding this new one.
                 </Text>
               </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>
+                  Authenticator code
+                </Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="number-pad"
+                  placeholder="123456"
+                  placeholderTextColor={colors.textSubtle}
+                  selectionColor={colors.primary}
+                  cursorColor={colors.primary}
+                  style={[
+                    styles.input,
+                    styles.mfaInput,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={setupCode}
+                  onChangeText={setSetupCode}
+                />
+              </View>
+
+              {errorMessage ? (
+                <View style={styles.errorBox}>
+                  <Text style={[styles.errorText, { color: colors.dangerText }]}>
+                    {errorMessage}
+                  </Text>
+                </View>
+              ) : null}
+
+              <PulseFiButton
+                title="Confirm MFA setup"
+                disabled={isSubmitting}
+                fullWidth
+                loading={isSubmitting}
+                onPress={() => void handleConfirmMFASetup()}
+              />
 
               <PulseFiButton
                 title="Back to login"
                 variant="secondary"
+                disabled={isSubmitting}
                 fullWidth
                 onPress={resetToCredentials}
               />
@@ -479,22 +557,27 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 2,
   },
-  devBox: {
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: "#FFF8E5",
+  setupBox: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#F6D58A",
-    gap: 6,
+    padding: 14,
+    gap: 8,
   },
-  devTitle: {
-    fontSize: 13,
+  setupLabel: {
+    fontSize: 12,
     fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-  devCode: {
+  setupSecret: {
     fontSize: 18,
     fontWeight: "900",
-    letterSpacing: 2,
+    letterSpacing: 1.2,
+    lineHeight: 28,
+  },
+  setupHint: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   fallbackArea: {
     alignItems: "center",
