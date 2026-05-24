@@ -3,7 +3,7 @@ import { NativeModules, Platform } from "react-native";
 
 import { getAccessToken } from "../auth/session";
 
-const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000/api/v1";
+const DEFAULT_LOCAL_API_BASE_URL = "https://pulsefi-backend-5exz.onrender.com/api/v1";
 
 type ApiOptions = RequestInit & {
   auth?: boolean;
