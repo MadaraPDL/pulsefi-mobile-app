@@ -780,6 +780,12 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       textTransform: "uppercase",
       letterSpacing: 0.6,
     },
+    cardTitle: {
+      fontSize: 18,
+      fontWeight: "900",
+      color: colors.text,
+      lineHeight: 24,
+    },
     cardText: {
       fontSize: 15,
       lineHeight: 22,

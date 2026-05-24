@@ -1305,7 +1305,7 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
     },
     heroName: {
       fontSize: 24,
-      fontWeight: "950",
+      fontWeight: "900",
       color: colors.text,
     },
     heroEmail: {
@@ -1464,7 +1464,7 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       paddingHorizontal: 12,
       paddingVertical: 10,
       fontSize: 14,
-      fontWeight: "950",
+      fontWeight: "900",
       letterSpacing: 1,
     },
     smallText: {

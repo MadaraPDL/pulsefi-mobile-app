@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "pulsefi-mobile-app",
+    "name": "PulseFi",
     "slug": "pulsefi-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -21,7 +21,9 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.pulsefi.mobileapp",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
