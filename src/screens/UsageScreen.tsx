@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Pressable,
@@ -16,6 +17,7 @@ import {
   getMySubscriptions,
   getMyUsageRecords,
   getMyUsageSummary,
+  getMyDeviceUsageList,
 } from "../api/appUser";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
@@ -25,16 +27,19 @@ import type {
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
+  MyDeviceUsage,
 } from "../types/appUser";
 
 type UsageData = {
   summary: MyUsageSummary;
   records: MyUsageRecord[];
+  deviceUsage: MyDeviceUsage[];
   routers: MyRouter[];
   subscriptions: MySubscription[];
 };
 
 type UsageFilter = "all" | "official" | "estimated";
+type UsageBreakdownMode = "download" | "upload";
 
 const usageFilters: { key: UsageFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -89,6 +94,17 @@ function getUsageKindHelp(kind: Exclude<UsageFilter, "all">) {
   }
 
   return "This is device-level usage estimated from router/CPE data when the router supports device visibility.";
+}
+
+
+function getDeviceDisplayName(device: MyDeviceUsage) {
+  return device.device_name ?? device.mac_address ?? "Unknown device";
+}
+
+function getDeviceUsageValue(device: MyDeviceUsage, mode: UsageBreakdownMode) {
+  return mode === "download"
+    ? toNumber(device.usage.download_mb)
+    : toNumber(device.usage.upload_mb);
 }
 
 function getRouterDisplayName(router: MyRouter | null) {
@@ -176,6 +192,8 @@ export function UsageScreen() {
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [data, setData] = useState<UsageData | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
+  const [breakdownMode, setBreakdownMode] =
+    useState<UsageBreakdownMode>("download");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -210,12 +228,13 @@ export function UsageScreen() {
         setSelectedRouterId(effectiveRouterId);
       }
 
-      const [summary, records] = await Promise.all([
+      const [summary, records, deviceUsage] = await Promise.all([
         getMyUsageSummary(effectiveRouterId),
         getMyUsageRecords(100, effectiveRouterId),
+        getMyDeviceUsageList(50, effectiveRouterId),
       ]);
 
-      setData({ summary, records, routers, subscriptions });
+      setData({ summary, records, deviceUsage, routers, subscriptions });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -227,9 +246,17 @@ export function UsageScreen() {
       setIsRefreshing(false);
     }
   }, [selectedRouterId, setSelectedRouterId]);
-  useEffect(() => {
-    void loadUsage();
-  }, [loadUsage]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadUsage();
+
+      const refreshTimer = setInterval(() => {
+        void loadUsage();
+      }, 30000);
+
+      return () => clearInterval(refreshTimer);
+    }, [loadUsage])
+  );
 
   const selectedRouter = useMemo(() => {
     if (!data?.routers.length) {
@@ -289,6 +316,26 @@ export function UsageScreen() {
     () => sumUsageRecords(records),
     [records]
   );
+
+  const selectedDeviceUsage = useMemo(() => {
+    const list = selectedRouter
+      ? (data?.deviceUsage ?? []).filter(
+          (device) => device.router_id === selectedRouter.id
+        )
+      : data?.deviceUsage ?? [];
+
+    return [...list].sort(
+      (left, right) =>
+        getDeviceUsageValue(right, breakdownMode) -
+        getDeviceUsageValue(left, breakdownMode)
+    );
+  }, [breakdownMode, data?.deviceUsage, selectedRouter]);
+
+  const maxDeviceUsageValue = selectedDeviceUsage.reduce(
+    (max, device) => Math.max(max, getDeviceUsageValue(device, breakdownMode)),
+    0
+  );
+
 
   const officialRecords = records.filter(
     (record) => getUsageRecordKind(record) === "official"
@@ -442,44 +489,160 @@ export function UsageScreen() {
         </Text>
 
         <View style={styles.metricRow}>
-          <View
+          <Pressable
+            onPress={() => setBreakdownMode("download")}
             style={[
               styles.metricBox,
               {
-                backgroundColor: colors.surfaceMuted,
-                borderColor: colors.border,
+                backgroundColor:
+                  breakdownMode === "download"
+                    ? primaryActionBackground
+                    : colors.surfaceMuted,
+                borderColor:
+                  breakdownMode === "download" ? colors.primary : colors.border,
               },
             ]}
           >
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+            <Text
+              style={[
+                styles.metricLabel,
+                {
+                  color:
+                    breakdownMode === "download"
+                      ? primaryActionText
+                      : colors.textMuted,
+                },
+              ]}
+            >
               Download
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
               {formatMb(selectedRouterTotals.download_mb)}
             </Text>
-          </View>
+            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
+              Tap for devices
+            </Text>
+          </Pressable>
 
-          <View
+          <Pressable
+            onPress={() => setBreakdownMode("upload")}
             style={[
               styles.metricBox,
               {
-                backgroundColor: colors.surfaceMuted,
-                borderColor: colors.border,
+                backgroundColor:
+                  breakdownMode === "upload"
+                    ? primaryActionBackground
+                    : colors.surfaceMuted,
+                borderColor:
+                  breakdownMode === "upload" ? colors.primary : colors.border,
               },
             ]}
           >
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+            <Text
+              style={[
+                styles.metricLabel,
+                {
+                  color:
+                    breakdownMode === "upload"
+                      ? primaryActionText
+                      : colors.textMuted,
+                },
+              ]}
+            >
               Upload
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
               {formatMb(selectedRouterTotals.upload_mb)}
             </Text>
-          </View>
+            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
+              Tap for devices
+            </Text>
+          </Pressable>
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
           Records for selected router: {selectedRouterTotals.record_count}
         </Text>
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.recordHeader}>
+          <View style={styles.deviceUsageTitleGroup}>
+            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+              {breakdownMode === "download"
+                ? "Download by device"
+                : "Upload by device"}
+            </Text>
+            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+              Current totals known to PulseFi. Refreshes every 30 seconds while
+              this screen is open.
+            </Text>
+          </View>
+        </View>
+
+        {selectedDeviceUsage.length ? (
+          selectedDeviceUsage.map((device) => {
+            const value = getDeviceUsageValue(device, breakdownMode);
+            const percent =
+              maxDeviceUsageValue > 0
+                ? Math.min((value / maxDeviceUsageValue) * 100, 100)
+                : 0;
+
+            return (
+              <View
+                key={device.id}
+                style={[
+                  styles.deviceUsageRow,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={styles.deviceUsageTopLine}>
+                  <View style={styles.deviceUsageNameGroup}>
+                    <Text style={[styles.deviceUsageName, { color: colors.text }]}>
+                      {getDeviceDisplayName(device)}
+                    </Text>
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                      {device.ip_address ?? device.mac_address}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.deviceUsageValue, { color: colors.text }]}>
+                    {formatMb(value)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.deviceUsageBarTrack,
+                    { backgroundColor: colors.border },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.deviceUsageBarFill,
+                      {
+                        backgroundColor: colors.primary,
+                        width: `${percent}%`,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            );
+          })
+        ) : (
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+            No per-device usage is available for this router yet.
+          </Text>
+        )}
       </View>
 
       <View style={styles.filterHeader}>
@@ -720,6 +883,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
     color: "#102033",
+  },
+  metricHint: {
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  deviceUsageTitleGroup: {
+    flex: 1,
+    gap: 4,
+  },
+  deviceUsageRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 10,
+  },
+  deviceUsageTopLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  deviceUsageNameGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  deviceUsageName: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  deviceUsageValue: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  deviceUsageBarTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  deviceUsageBarFill: {
+    height: "100%",
+    borderRadius: 999,
   },
   filterHeader: {
     flexDirection: "row",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -131,9 +132,17 @@ export function HomeScreen() {
     }
   }, [selectedRouterId]);
 
-  useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadDashboard();
+
+      const refreshTimer = setInterval(() => {
+        void loadDashboard();
+      }, 30000);
+
+      return () => clearInterval(refreshTimer);
+    }, [loadDashboard])
+  );
 
   const selectedRouter = useMemo(() => {
     if (!data?.routers.length) {
