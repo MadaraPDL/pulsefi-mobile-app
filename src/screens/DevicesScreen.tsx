@@ -416,14 +416,22 @@ export function DevicesScreen() {
 
       setErrorMessage(null);
 
-      const [devices, deviceUsage, policies, routers, subscriptions] =
-        await Promise.all([
-          getMyDevices(50),
-          getMyDeviceUsageList(50),
-          getMyDevicePolicies(50),
-          getMyRouters(),
-          getMySubscriptions(),
-        ]);
+      const [routers, subscriptions] = await Promise.all([
+        getMyRouters(),
+        getMySubscriptions(),
+      ]);
+
+      const effectiveRouterId =
+        selectedRouterId ??
+        routers.find((router) => router.user_subscription_id)?.id ??
+        routers[0]?.id ??
+        null;
+
+      const [devices, deviceUsage, policies] = await Promise.all([
+        getMyDevices(50, effectiveRouterId),
+        getMyDeviceUsageList(50, effectiveRouterId),
+        getMyDevicePolicies(50),
+      ]);
 
       const routerIds = Array.from(
         new Set(devices.map((device) => device.router_id))
@@ -482,7 +490,7 @@ export function DevicesScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedRouterId]);
 
   useEffect(() => {
     void loadDevices();

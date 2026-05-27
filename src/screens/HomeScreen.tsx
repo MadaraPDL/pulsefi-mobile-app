@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -98,12 +98,19 @@ export function HomeScreen() {
 
       setErrorMessage(null);
 
-      const [summary, subscriptions, routers, usageRecords] = await Promise.all([
+      const [summary, subscriptions, routers] = await Promise.all([
         getMySummary(),
         getMySubscriptions(),
         getMyRouters(),
-        getMyUsageRecords(100),
       ]);
+
+      const effectiveRouterId =
+        selectedRouterId ??
+        routers.find((router) => router.user_subscription_id)?.id ??
+        routers[0]?.id ??
+        null;
+
+      const usageRecords = await getMyUsageRecords(100, effectiveRouterId);
 
       setData({
         summary,
@@ -121,7 +128,7 @@ export function HomeScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedRouterId]);
 
   useEffect(() => {
     void loadDashboard();

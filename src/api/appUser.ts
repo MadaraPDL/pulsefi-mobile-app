@@ -1,4 +1,17 @@
 import { apiRequest } from "./client";
+function buildQuery(params: Record<string, string | number | null | undefined>) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== "") {
+      query.set(key, String(value));
+    }
+  }
+
+  const rendered = query.toString();
+  return rendered ? `?${rendered}` : "";
+}
+
 import type {
   AppUserSummary,
   MyAlert,
@@ -33,16 +46,22 @@ export function getMySubscription(subscriptionId: string) {
   return apiRequest<MySubscription>(`/me/subscriptions/${subscriptionId}`);
 }
 
-export function getMyUsageSummary() {
-  return apiRequest<MyUsageSummary>("/me/usage/summary");
+export function getMyUsageSummary(routerId?: string | null) {
+  return apiRequest<MyUsageSummary>(
+    `/me/usage/summary${buildQuery({ router_id: routerId })}`
+  );
 }
 
-export function getMyUsageRecords(limit = 20) {
-  return apiRequest<MyUsageRecord[]>(`/me/usage/records?limit=${limit}`);
+export function getMyUsageRecords(limit = 20, routerId?: string | null) {
+  return apiRequest<MyUsageRecord[]>(
+    `/me/usage/records${buildQuery({ limit, router_id: routerId })}`
+  );
 }
 
-export function getMyDevices(limit = 50) {
-  return apiRequest<MyDevice[]>(`/me/devices?limit=${limit}`);
+export function getMyDevices(limit = 50, routerId?: string | null) {
+  return apiRequest<MyDevice[]>(
+    `/me/devices${buildQuery({ limit, router_id: routerId })}`
+  );
 }
 
 export function getMyDevice(deviceId: string) {
@@ -68,8 +87,10 @@ export function getMyRouterCapabilities(routerId: string) {
   return apiRequest<MyRouterCapabilities>(`/me/routers/${routerId}/capabilities`);
 }
 
-export function getMyDeviceUsageList(limit = 50) {
-  return apiRequest<MyDeviceUsage[]>(`/me/usage/devices?limit=${limit}`);
+export function getMyDeviceUsageList(limit = 50, routerId?: string | null) {
+  return apiRequest<MyDeviceUsage[]>(
+    `/me/usage/devices${buildQuery({ limit, router_id: routerId })}`
+  );
 }
 
 export function getMyDeviceUsage(deviceId: string) {
