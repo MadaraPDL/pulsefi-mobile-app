@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Pressable,
 } from "react-native";
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
@@ -146,10 +147,24 @@ export function HomeScreen() {
   }, [data?.routers, selectedRouterId]);
 
   useEffect(() => {
-    if (!selectedRouterId && selectedRouter) {
-      setSelectedRouterId(selectedRouter.id);
+    if (!data?.routers.length) {
+      return;
     }
-  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+    const matchingRouter = selectedRouterId
+      ? data.routers.find((router) => router.id === selectedRouterId)
+      : null;
+
+    const fallbackRouter =
+      data.routers.find((router) => router.user_subscription_id) ??
+      data.routers[0];
+
+    const nextRouterId = matchingRouter?.id ?? fallbackRouter?.id ?? null;
+
+    if (nextRouterId && selectedRouterId !== nextRouterId) {
+      setSelectedRouterId(nextRouterId);
+    }
+  }, [data?.routers, selectedRouterId, setSelectedRouterId]);
 
   const selectedSubscription = useMemo(() => {
     if (!selectedRouter?.user_subscription_id) {
@@ -247,6 +262,44 @@ export function HomeScreen() {
         <Text style={[styles.cardTitle, { color: colors.text }]}>
           {getRouterDisplayName(selectedRouter)}
         </Text>
+
+        {data?.routers.length ? (
+          <View style={styles.routerPicker}>
+            {data.routers.map((router) => {
+              const active = selectedRouter?.id === router.id;
+
+              return (
+                <Pressable
+                  key={router.id}
+                  style={[
+                    styles.routerChip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active
+                        ? (colors.mode === "dark" ? "rgba(0, 209, 255, 0.12)" : "#EAF9FE")
+                        : colors.surfaceMuted,
+                    },
+                  ]}
+                  onPress={() => setSelectedRouterId(router.id)}
+                >
+                  <Text
+                    style={[
+                      styles.routerChipText,
+                      {
+                        color: active ? colors.primary : colors.textMuted,
+                      },
+                    ]}
+                  >
+                    {getRouterDisplayName(router)}
+                  </Text>
+                  <Text style={[styles.routerChipSubtext, { color: colors.textSubtle }]}>
+                    {router.id.slice(0, 8)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         {selectedSubscription ? (
           <>
@@ -499,5 +552,27 @@ const styles = StyleSheet.create({
   smallText: {
     fontSize: 13,
     color: "#6B7888",
+  },
+  routerPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  routerChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  routerChipText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  routerChipSubtext: {
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2,
   },
 });

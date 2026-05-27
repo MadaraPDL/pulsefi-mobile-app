@@ -70,7 +70,7 @@ const sections: Array<{
 export function MoreScreen({ session, onLogout }: MoreScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const [activeSection, setActiveSection] = useState<MoreSection>("plans");
+  const [activeSection, setActiveSection] = useState<MoreSection>("routers");
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
 
   if (activeSection === "plans") {
