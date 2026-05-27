@@ -822,6 +822,13 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
                 onPress={() => void handleConfirmEmailMFAEnable()}
               />
               <PulseFiButton
+                title="Resend code by email"
+                variant="secondary"
+                fullWidth
+                disabled={isWorking}
+                onPress={() => void handleStartEmailMFAEnable()}
+              />
+              <PulseFiButton
                 title="Cancel email setup"
                 variant="secondary"
                 fullWidth
@@ -1021,6 +1028,17 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
                 disabled={isWorking || disableCodeInput.trim().length < 6}
                 onPress={() => void handleConfirmDisableMFA()}
               />
+              {disableTarget && disableVerificationMethod === "email" ? (
+                <PulseFiButton
+                  title="Resend code by email"
+                  variant="secondary"
+                  fullWidth
+                  disabled={isWorking}
+                  onPress={() =>
+                    void handleStartDisableMFA(disableTarget, "email")
+                  }
+                />
+              ) : null}
               <PulseFiButton
                 title="Cancel"
                 variant="secondary"
@@ -1078,7 +1096,11 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
 
           {emailMfaEnabled ? (
             <PulseFiButton
-              title="Send email code"
+              title={
+                backupChallengeMethod === "email" && backupChallengeToken
+                  ? "Resend code by email"
+                  : "Send email code"
+              }
               variant={
                 backupChallengeMethod === "email" && backupChallengeToken
                   ? "primary"
@@ -1147,6 +1169,15 @@ export function ProfileScreen({ session, onLogout }: ProfileScreenProps) {
               disabled={isWorking || backupCodeInput.trim().length < 6}
               onPress={() => void handleRegenerateBackupCodes()}
             />
+            {backupChallengeMethod === "email" ? (
+              <PulseFiButton
+                title="Resend code by email"
+                variant="secondary"
+                fullWidth
+                disabled={isWorking}
+                onPress={() => void handleCreateBackupChallenge("email")}
+              />
+            ) : null}
           </View>
         ) : null}
 
