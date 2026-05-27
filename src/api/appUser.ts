@@ -97,8 +97,10 @@ export function getMyDeviceUsage(deviceId: string) {
   return apiRequest<MyDeviceUsage>(`/me/usage/devices/${deviceId}`);
 }
 
-export function getMyAlerts(limit = 50) {
-  return apiRequest<MyAlert[]>(`/me/alerts?limit=${limit}`);
+export function getMyAlerts(limit = 50, routerId?: string | null) {
+  return apiRequest<MyAlert[]>(
+    `/me/alerts${buildQuery({ limit, router_id: routerId })}`
+  );
 }
 
 export function getMyAlert(alertId: string) {

@@ -100,11 +100,27 @@ export function AlertsScreen() {
 
       setErrorMessage(null);
 
-      const [result, routerResult, subscriptionResult] = await Promise.all([
-        getMyAlerts(50),
+      const [routerResult, subscriptionResult] = await Promise.all([
         getMyRouters(),
         getMySubscriptions(),
       ]);
+
+      const matchingRouter = selectedRouterId
+        ? routerResult.find((router) => router.id === selectedRouterId)
+        : null;
+
+      const fallbackRouter =
+        routerResult.find((router) => router.user_subscription_id) ??
+        routerResult[0] ??
+        null;
+
+      const effectiveRouterId = matchingRouter?.id ?? fallbackRouter?.id ?? null;
+
+      if (effectiveRouterId && selectedRouterId !== effectiveRouterId) {
+        setSelectedRouterId(effectiveRouterId);
+      }
+
+      const result = await getMyAlerts(50, effectiveRouterId);
 
       setAlerts(result);
       setRouters(routerResult);
@@ -119,8 +135,7 @@ export function AlertsScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
-
+  }, [selectedRouterId, setSelectedRouterId]);
   useEffect(() => {
     void loadAlerts();
   }, [loadAlerts]);
@@ -136,10 +151,27 @@ export function AlertsScreen() {
   }, [routers, selectedRouterId]);
 
   useEffect(() => {
-    if (!selectedRouterId && selectedRouter) {
-      setSelectedRouterId(selectedRouter.id);
+    if (!routers.length) {
+      return;
     }
-  }, [selectedRouter, selectedRouterId, setSelectedRouterId]);
+
+    const matchingRouter = selectedRouterId
+      ? routers.find((router) => router.id === selectedRouterId)
+      : null;
+
+    const fallbackRouter =
+      routers.find((router) => router.user_subscription_id) ?? routers[0];
+
+    const nextRouterId = matchingRouter?.id ?? fallbackRouter?.id ?? null;
+
+    if (nextRouterId && selectedRouterId !== nextRouterId) {
+      setSelectedRouterId(nextRouterId);
+    }
+  }, [routers, selectedRouterId, setSelectedRouterId]);
+
+  const selectedRouterIdLabel = selectedRouter
+    ? `${selectedRouterIdLabel} · ${selectedRouter.id.slice(0, 8)}`
+    : "No router selected";
 
   const selectedSubscription = useMemo(() => {
     if (!selectedRouter?.user_subscription_id) {
