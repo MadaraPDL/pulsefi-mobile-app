@@ -170,7 +170,7 @@ export function AlertsScreen() {
   }, [routers, selectedRouterId, setSelectedRouterId]);
 
   const selectedRouterIdLabel = selectedRouter
-    ? `${selectedRouterIdLabel} · ${selectedRouter.id.slice(0, 8)}`
+    ? `${getRouterDisplayName(selectedRouter)} · ${selectedRouter.id.slice(0, 8)}`
     : "No router selected";
 
   const selectedSubscription = useMemo(() => {

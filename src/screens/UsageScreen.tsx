@@ -9,6 +9,8 @@ import {
   View,
 } from "react-native";
 
+import Svg, { Circle } from "react-native-svg";
+
 import {
   getMyRouters,
   getMySubscriptions,
@@ -107,6 +109,62 @@ function sumUsageRecords(records: MyUsageRecord[]) {
       upload_mb: 0,
       record_count: 0,
     }
+  );
+}
+
+
+function CircularUsageGraph({
+  usedMb,
+  limitGb,
+}: {
+  usedMb: number;
+  limitGb: number | null;
+}) {
+  const { colors } = usePulseFiTheme();
+  const size = 168;
+  const strokeWidth = 16;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const limitMb = limitGb && limitGb > 0 ? limitGb * 1024 : null;
+  const percent = limitMb ? Math.min((usedMb / limitMb) * 100, 100) : 0;
+  const strokeDashoffset = circumference - (percent / 100) * circumference;
+
+  return (
+    <View style={styles.circularUsageWrap}>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={colors.border}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={colors.primary}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          rotation="-90"
+          originX={size / 2}
+          originY={size / 2}
+        />
+      </Svg>
+
+      <View style={styles.circularUsageCenter}>
+        <Text style={[styles.circularUsagePercent, { color: colors.text }]}>
+          {limitMb ? `${Math.round(percent)}%` : "--"}
+        </Text>
+        <Text style={[styles.circularUsageLabel, { color: colors.textSubtle }]}>
+          of plan
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -219,6 +277,10 @@ export function UsageScreen() {
       ) ?? null
     );
   }, [data?.subscriptions, selectedRouter]);
+
+  const selectedPlanLimitGb = selectedSubscription
+    ? toNumber(selectedSubscription.plan.data_limit_gb)
+    : null;
 
   const records = selectedRouter
     ? (data?.records ?? []).filter((record) => record.router_id === selectedRouter.id)
@@ -364,8 +426,19 @@ export function UsageScreen() {
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
           Selected Router Usage Summary
         </Text>
+        <CircularUsageGraph
+          usedMb={selectedRouterTotals.total_mb}
+          limitGb={selectedPlanLimitGb}
+        />
+
         <Text style={[styles.bigNumber, { color: colors.text }]}>
           {formatMb(selectedRouterTotals.total_mb)}
+        </Text>
+
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          {selectedPlanLimitGb
+            ? `Used from ${selectedPlanLimitGb} GB package`
+            : "No package limit available"}
         </Text>
 
         <View style={styles.metricRow}>
@@ -709,6 +782,30 @@ const styles = StyleSheet.create({
   smallText: {
     fontSize: 12,
     color: "#6B7888",
+  },
+  circularUsageWrap: {
+    alignSelf: "center",
+    width: 168,
+    height: 168,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 6,
+  },
+  circularUsageCenter: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  circularUsagePercent: {
+    fontSize: 30,
+    fontWeight: "900",
+  },
+  circularUsageLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
   mutedText: {
     fontSize: 14,
