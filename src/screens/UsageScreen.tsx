@@ -13,6 +13,7 @@ import {
 import Svg, { Circle } from "react-native-svg";
 
 import {
+  getMyDailyUsage,
   getMyRouters,
   getMySubscriptions,
   getMyUsageRecords,
@@ -27,11 +28,13 @@ import type {
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
+  MyDailyUsage,
   MyDeviceUsage,
 } from "../types/appUser";
 
 type UsageData = {
   summary: MyUsageSummary;
+  dailyUsage: MyDailyUsage[];
   records: MyUsageRecord[];
   deviceUsage: MyDeviceUsage[];
   routers: MyRouter[];
@@ -60,6 +63,20 @@ function formatMb(value: DecimalLike) {
   }
 
   return `${mb.toFixed(0)} MB`;
+}
+
+function formatDailyLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function formatDateTime(value: string) {
@@ -128,6 +145,37 @@ function sumUsageRecords(records: MyUsageRecord[]) {
   );
 }
 
+function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
+  const totals = summary?.totals;
+
+  if (!totals) {
+    return null;
+  }
+
+  return {
+    total_mb: toNumber(totals.total_mb),
+    download_mb: toNumber(totals.download_mb),
+    upload_mb: toNumber(totals.upload_mb),
+    record_count: totals.record_count,
+  };
+}
+
+function getUsageSourceKind(record: MyUsageRecord) {
+  return record.device_id ? "estimated" : "official";
+}
+
+function summarizeRecordsWithoutDoubleCounting(records: MyUsageRecord[]) {
+  const officialRecords = records.filter(
+    (record) => getUsageSourceKind(record) === "official"
+  );
+
+  if (officialRecords.length) {
+    return sumUsageRecords(officialRecords);
+  }
+
+  return sumUsageRecords(records);
+}
+
 
 function CircularUsageGraph({
   usedMb,
@@ -192,6 +240,7 @@ export function UsageScreen() {
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [data, setData] = useState<UsageData | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
+  const [recordLimit, setRecordLimit] = useState(5);
   const [breakdownMode, setBreakdownMode] =
     useState<UsageBreakdownMode>("download");
   const [isLoading, setIsLoading] = useState(true);
@@ -228,13 +277,14 @@ export function UsageScreen() {
         setSelectedRouterId(effectiveRouterId);
       }
 
-      const [summary, records, deviceUsage] = await Promise.all([
+      const [summary, dailyUsage, records, deviceUsage] = await Promise.all([
         getMyUsageSummary(effectiveRouterId),
+        getMyDailyUsage(7, effectiveRouterId),
         getMyUsageRecords(100, effectiveRouterId),
         getMyDeviceUsageList(50, effectiveRouterId),
       ]);
 
-      setData({ summary, records, deviceUsage, routers, subscriptions });
+      setData({ summary, dailyUsage, records, deviceUsage, routers, subscriptions });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -313,8 +363,8 @@ export function UsageScreen() {
     ? (data?.records ?? []).filter((record) => record.router_id === selectedRouter.id)
     : data?.records ?? [];
   const selectedRouterTotals = useMemo(
-    () => sumUsageRecords(records),
-    [records]
+    () => normalizeUsageSummary(data?.summary) ?? summarizeRecordsWithoutDoubleCounting(records),
+    [data?.summary, records]
   );
 
   const selectedDeviceUsage = useMemo(() => {
@@ -333,6 +383,59 @@ export function UsageScreen() {
 
   const maxDeviceUsageValue = selectedDeviceUsage.reduce(
     (max, device) => Math.max(max, getDeviceUsageValue(device, breakdownMode)),
+    0
+  );
+
+  const dailyUsageRows = useMemo(() => {
+    const backendRows = data?.dailyUsage ?? [];
+
+    if (backendRows.length) {
+      return [...backendRows].sort((left, right) =>
+        right.usage_date.localeCompare(left.usage_date)
+      );
+    }
+
+    const officialRecords = records.filter(
+      (record) => getUsageSourceKind(record) === "official"
+    );
+    const recordsForDailyFallback = officialRecords.length ? officialRecords : records;
+    const grouped = new Map<string, MyDailyUsage>();
+
+    for (const record of recordsForDailyFallback) {
+      const usageDate = record.record_start.slice(0, 10);
+      const existing = grouped.get(usageDate);
+
+      if (!existing) {
+        grouped.set(usageDate, {
+          usage_date: usageDate,
+          totals: {
+            upload_mb: toNumber(record.upload_mb),
+            download_mb: toNumber(record.download_mb),
+            total_mb: toNumber(record.total_mb),
+            record_count: 1,
+            first_record_start: record.record_start,
+            last_record_end: record.record_end,
+          },
+        });
+        continue;
+      }
+
+      existing.totals.upload_mb =
+        toNumber(existing.totals.upload_mb) + toNumber(record.upload_mb);
+      existing.totals.download_mb =
+        toNumber(existing.totals.download_mb) + toNumber(record.download_mb);
+      existing.totals.total_mb =
+        toNumber(existing.totals.total_mb) + toNumber(record.total_mb);
+      existing.totals.record_count += 1;
+    }
+
+    return [...grouped.values()]
+      .sort((left, right) => right.usage_date.localeCompare(left.usage_date))
+      .slice(0, 7);
+  }, [data?.dailyUsage, records]);
+
+  const maxDailyUsageMb = dailyUsageRows.reduce(
+    (max, day) => Math.max(max, toNumber(day.totals.total_mb)),
     0
   );
 
@@ -356,6 +459,14 @@ export function UsageScreen() {
     (total, record) => total + toNumber(record.total_mb),
     0
   );
+
+  const visibleFilteredRecords = filteredRecords.slice(0, recordLimit);
+  const hasMoreRecords = filteredRecords.length > visibleFilteredRecords.length;
+
+
+  useEffect(() => {
+    setRecordLimit(5);
+  }, [selectedRouterId, usageFilter]);
 
   function getFilterCount(filter: UsageFilter) {
     if (filter === "all") {
@@ -561,7 +672,8 @@ export function UsageScreen() {
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Records for selected router: {selectedRouterTotals.record_count}
+          Summary records: {selectedRouterTotals.record_count} · Latest loaded:{" "}
+          {records.length}
         </Text>
       </View>
 
@@ -579,8 +691,8 @@ export function UsageScreen() {
                 : "Upload by device"}
             </Text>
             <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              Current totals known to PulseFi. Refreshes every 30 seconds while
-              this screen is open.
+              Estimated router/CPE device totals. These may not exactly match
+              official subscription totals. Refreshes every 30 seconds while open.
             </Text>
           </View>
         </View>
@@ -645,6 +757,80 @@ export function UsageScreen() {
         )}
       </View>
 
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Daily Usage
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Last 7 days for the selected router.
+        </Text>
+
+        {dailyUsageRows.length ? (
+          dailyUsageRows.map((day) => {
+            const totalMb = toNumber(day.totals.total_mb);
+            const percent =
+              maxDailyUsageMb > 0
+                ? Math.min((totalMb / maxDailyUsageMb) * 100, 100)
+                : 0;
+
+            return (
+              <View
+                key={day.usage_date}
+                style={[
+                  styles.dailyRow,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={styles.dailyHeader}>
+                  <Text style={[styles.dailyDate, { color: colors.text }]}>
+                    {formatDailyLabel(day.usage_date)}
+                  </Text>
+                  <Text style={[styles.dailyTotal, { color: colors.text }]}>
+                    {formatMb(day.totals.total_mb)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.dailyBarTrack,
+                    { backgroundColor: colors.border },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.dailyBarFill,
+                      {
+                        backgroundColor: colors.primary,
+                        width: `${percent}%`,
+                      },
+                    ]}
+                  />
+                </View>
+
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                  Download {formatMb(day.totals.download_mb)} · Upload{" "}
+                  {formatMb(day.totals.upload_mb)} · Records{" "}
+                  {day.totals.record_count}
+                </Text>
+              </View>
+            );
+          })
+        ) : (
+          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+            No daily usage is available for this router yet.
+          </Text>
+        )}
+      </View>
+
       <View style={styles.filterHeader}>
         <View>
           <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
@@ -701,7 +887,8 @@ export function UsageScreen() {
         </Text>
 
         {filteredRecords.length ? (
-          filteredRecords.map((record) => {
+          <>
+            {visibleFilteredRecords.map((record) => {
             const kind = getUsageRecordKind(record);
 
             return (
@@ -765,7 +952,25 @@ export function UsageScreen() {
                 </Text>
               </View>
             );
-          })
+          })}
+
+            {hasMoreRecords ? (
+              <Pressable
+                style={[
+                  styles.loadMoreButton,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setRecordLimit((current) => current + 5)}
+              >
+                <Text style={[styles.loadMoreText, { color: colors.primary }]}>
+                  Show 5 more records
+                </Text>
+              </Pressable>
+            ) : null}
+          </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
             No records match this filter. Pull to refresh or run simulator
@@ -946,6 +1151,48 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   filterText: {
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  dailyRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 9,
+    marginTop: 10,
+  },
+  dailyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  dailyDate: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  dailyTotal: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  dailyBarTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  dailyBarFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  loadMoreButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  loadMoreText: {
     fontSize: 13,
     fontWeight: "900",
   },

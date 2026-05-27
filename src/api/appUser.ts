@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+﻿import { apiRequest } from "./client";
 function buildQuery(params: Record<string, string | number | null | undefined>) {
   const query = new URLSearchParams();
 
@@ -18,6 +18,7 @@ import type {
   MyDevice,
   MyDevicePolicy,
   MyDevicePolicyExecution,
+  MyDailyUsage,
   MyDeviceUsage,
   MyPlanChangeRequest,
   MyPrediction,
@@ -57,6 +58,13 @@ export function getMyUsageRecords(limit = 20, routerId?: string | null) {
     `/me/usage/records${buildQuery({ limit, router_id: routerId })}`
   );
 }
+
+export function getMyDailyUsage(days = 7, routerId?: string | null) {
+  return apiRequest<MyDailyUsage[]>(
+    `/me/usage/daily${buildQuery({ days, router_id: routerId })}`
+  );
+}
+
 
 export function getMyDevices(limit = 50, routerId?: string | null) {
   return apiRequest<MyDevice[]>(
@@ -224,3 +232,4 @@ export function executeMyDevicePolicy(policyId: string) {
     }
   );
 }
+

@@ -17,21 +17,21 @@ import {
   getMyRouters,
   getMySubscriptions,
   getMySummary,
-  getMyUsageRecords,
+  getMyUsageSummary,
 } from "../api/appUser";
 import type {
   AppUserSummary,
   DecimalLike,
   MyRouter,
   MySubscription,
-  MyUsageRecord,
+  MyUsageSummary,
 } from "../types/appUser";
 
 type DashboardData = {
   summary: AppUserSummary;
+  usageSummary: MyUsageSummary | null;
   subscriptions: MySubscription[];
   routers: MyRouter[];
-  usageRecords: MyUsageRecord[];
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -65,22 +65,26 @@ function getRouterDisplayName(router: MyRouter | null) {
   return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
-function sumUsage(records: MyUsageRecord[]) {
-  return records.reduce(
-    (totals, record) => ({
-      total_mb: totals.total_mb + toNumber(record.total_mb),
-      download_mb: totals.download_mb + toNumber(record.download_mb),
-      upload_mb: totals.upload_mb + toNumber(record.upload_mb),
-      record_count: totals.record_count + 1,
-    }),
-    {
+function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
+  const totals = summary?.totals;
+
+  if (!totals) {
+    return {
       total_mb: 0,
       download_mb: 0,
       upload_mb: 0,
       record_count: 0,
-    }
-  );
+    };
+  }
+
+  return {
+    total_mb: toNumber(totals.total_mb),
+    download_mb: toNumber(totals.download_mb),
+    upload_mb: toNumber(totals.upload_mb),
+    record_count: totals.record_count,
+  };
 }
+
 
 export function HomeScreen() {
   const { colors } = usePulseFiTheme();
@@ -112,13 +116,15 @@ export function HomeScreen() {
         routers[0]?.id ??
         null;
 
-      const usageRecords = await getMyUsageRecords(100, effectiveRouterId);
+      const usageSummary = effectiveRouterId
+        ? await getMyUsageSummary(effectiveRouterId)
+        : null;
 
       setData({
         summary,
+        usageSummary,
         subscriptions,
         routers,
-        usageRecords,
       });
     } catch (error) {
       setErrorMessage(
@@ -187,19 +193,9 @@ export function HomeScreen() {
     );
   }, [data?.subscriptions, selectedRouter]);
 
-  const selectedRouterUsageRecords = useMemo(() => {
-    if (!selectedRouter) {
-      return [];
-    }
-
-    return (data?.usageRecords ?? []).filter(
-      (record) => record.router_id === selectedRouter.id
-    );
-  }, [data?.usageRecords, selectedRouter]);
-
   const selectedRouterTotals = useMemo(
-    () => sumUsage(selectedRouterUsageRecords),
-    [selectedRouterUsageRecords]
+    () => normalizeUsageSummary(data?.usageSummary),
+    [data?.usageSummary]
   );
 
   if (isLoading && !data) {
@@ -377,7 +373,7 @@ export function HomeScreen() {
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Records for this router: {selectedRouterTotals.record_count}
+          Summary records for this router: {selectedRouterTotals.record_count}
         </Text>
       </View>
 

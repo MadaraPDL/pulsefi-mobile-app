@@ -76,6 +76,12 @@ export type MyUsageSummary = {
   totals: MyUsageTotals;
 };
 
+
+export type MyDailyUsage = {
+  usage_date: string;
+  totals: MyUsageTotals;
+};
+
 export type MyUsageRecord = {
   id: string;
   user_subscription_id: string;
@@ -235,3 +241,4 @@ export type MyDevicePolicyExecution = {
   action_log: MyRouterActionLog | null;
   message: string;
 };
+
