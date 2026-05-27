@@ -150,6 +150,37 @@ export async function changeAppUserMFAChallengeMethod(payload: {
 export function getCurrentAccount() {
   return apiRequest<CurrentAccount>("/auth/me");
 }
+
+export type ForgotPasswordResponse = {
+  message: string;
+  dev_reset_url?: string | null;
+};
+
+export type ResetPasswordResponse = {
+  message: string;
+};
+
+export function requestAppUserPasswordReset(identifier: string) {
+  return apiRequest<ForgotPasswordResponse>("/auth/password/forgot", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify({
+      account_type: "app_user",
+      identifier,
+    }),
+  });
+}
+
+export function resetAppUserPassword(payload: {
+  token: string;
+  new_password: string;
+}) {
+  return apiRequest<ResetPasswordResponse>("/auth/password/reset", {
+    method: "POST",
+    auth: false,
+    body: JSON.stringify(payload),
+  });
+}
 export type MFAStatusResponse = {
   account_type: "admin" | "app_user";
   mfa_required: boolean;

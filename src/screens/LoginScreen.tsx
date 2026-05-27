@@ -16,6 +16,7 @@ import {
   changeAppUserMFAChallengeMethod,
   confirmAppUserMFASetup,
   loginAppUser,
+  requestAppUserPasswordReset,
   verifyAppUserMFA,
 } from "../api/auth";
 import type {
@@ -32,6 +33,7 @@ type LoginScreenProps = {
 
 type LoginStep =
   | { kind: "credentials" }
+  | { kind: "forgot_password" }
   | {
       kind: "mfa_required";
       challenge: MFARequiredResponse;
@@ -56,6 +58,11 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [step, setStep] = useState<LoginStep>({ kind: "credentials" });
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(
+    null
+  );
+  const [mfaSuccessMessage, setMfaSuccessMessage] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
   const [setupCode, setSetupCode] = useState("");
   const [activeChallenge, setActiveChallenge] =
@@ -73,6 +80,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setResetSuccessMessage(null);
+      setMfaSuccessMessage(null);
 
       const result = await loginAppUser(identifier.trim(), password);
 
@@ -108,6 +117,41 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     }
   }
 
+  function openForgotPassword() {
+    setResetIdentifier(identifier.trim());
+    setResetSuccessMessage(null);
+    setErrorMessage(null);
+    setMfaSuccessMessage(null);
+    setStep({ kind: "forgot_password" });
+  }
+
+  async function handleRequestPasswordReset() {
+    const cleanedIdentifier = resetIdentifier.trim();
+
+    if (!cleanedIdentifier) {
+      setErrorMessage("Enter your email or username first.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setErrorMessage(null);
+      setResetSuccessMessage(null);
+
+      const response = await requestAppUserPasswordReset(cleanedIdentifier);
+      setResetSuccessMessage(response.message);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not send password reset email."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+
   async function handleVerifyMFA() {
     if (!activeChallenge) {
       setErrorMessage("MFA challenge is missing. Please sign in again.");
@@ -117,6 +161,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setMfaSuccessMessage(null);
 
       const session = await verifyAppUserMFA({
         challenge_token: activeChallenge.challenge_token,
@@ -168,6 +213,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     try {
       setIsSubmitting(true);
       setErrorMessage(null);
+      setMfaSuccessMessage(null);
 
       const nextChallenge = await changeAppUserMFAChallengeMethod({
         challenge_token: activeChallenge.challenge_token,
@@ -177,6 +223,11 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
       setActiveChallenge(nextChallenge);
       setMfaCode("");
       setIsBackupCodeMode(false);
+      setMfaSuccessMessage(
+        method === "email"
+          ? "A new verification code was sent to your email."
+          : null
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not switch MFA method."
@@ -193,6 +244,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
     setSetupCode("");
     setIsBackupCodeMode(false);
     setErrorMessage(null);
+    setResetSuccessMessage(null);
+    setMfaSuccessMessage(null);
   }
 
   const activeMethods = activeChallenge?.active_methods ?? [];
@@ -201,9 +254,11 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const canUseAuthenticator =
     activeChallenge?.method !== "authenticator" &&
     activeMethods.includes("authenticator");
+  const canResendEmailCode =
+    activeChallenge?.method === "email" && !isBackupCodeMode;
   const canUseBackupCode = Boolean(activeChallenge?.backup_codes_available);
   const hasFallbackOptions =
-    canUseEmail || canUseAuthenticator || canUseBackupCode;
+    canUseEmail || canUseAuthenticator || canUseBackupCode || canResendEmailCode;
 
   return (
     <KeyboardAvoidingView
@@ -279,6 +334,12 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 />
               </View>
 
+              {mfaSuccessMessage ? (
+                <View style={styles.successBox}>
+                  <Text style={styles.successText}>{mfaSuccessMessage}</Text>
+                </View>
+              ) : null}
+
               {errorMessage ? (
                 <View style={styles.errorBox}>
                   <Text style={[styles.errorText, { color: colors.dangerText }]}>
@@ -293,6 +354,86 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                 fullWidth
                 loading={isSubmitting}
                 onPress={() => void handleLogin()}
+              />
+
+              <PulseFiButton
+                title="Forgot password?"
+                variant="ghost"
+                disabled={isSubmitting}
+                fullWidth
+                onPress={openForgotPassword}
+              />
+            </>
+          ) : null}
+
+
+          {step.kind === "forgot_password" ? (
+            <>
+              <Text style={[styles.title, { color: colors.text }]}>
+                Reset password
+              </Text>
+              <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+                Enter your App User email or username. If the account exists, a
+                secure reset link will be sent to the saved email address.
+              </Text>
+
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.label, { color: colors.textMuted }]}>
+                  Email or username
+                </Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  placeholder="user@example.com"
+                  placeholderTextColor={colors.textSubtle}
+                  selectionColor={colors.primary}
+                  cursorColor={colors.primary}
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      color: colors.text,
+                    },
+                  ]}
+                  value={resetIdentifier}
+                  onChangeText={setResetIdentifier}
+                />
+              </View>
+
+              {errorMessage ? (
+                <View style={styles.errorBox}>
+                  <Text style={[styles.errorText, { color: colors.dangerText }]}>
+                    {errorMessage}
+                  </Text>
+                </View>
+              ) : null}
+
+              {resetSuccessMessage ? (
+                <View style={styles.successBox}>
+                  <Text style={styles.successText}>{resetSuccessMessage}</Text>
+                </View>
+              ) : null}
+
+              <PulseFiButton
+                title={
+                  resetSuccessMessage
+                    ? "Send another reset email"
+                    : "Send reset email"
+                }
+                disabled={isSubmitting || !resetIdentifier.trim()}
+                fullWidth
+                loading={isSubmitting}
+                onPress={() => void handleRequestPasswordReset()}
+              />
+
+              <PulseFiButton
+                title="Back to login"
+                variant="secondary"
+                disabled={isSubmitting}
+                fullWidth
+                onPress={resetToCredentials}
               />
             </>
           ) : null}
@@ -341,9 +482,19 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
                   </Text>
 
                   <View style={styles.fallbackActions}>
+                    {canResendEmailCode ? (
+                      <PulseFiButton
+                        title="Resend code by email"
+                        variant="ghost"
+                        compact
+                        disabled={isSubmitting}
+                        onPress={() => void handleChangeMFAMethod("email")}
+                      />
+                    ) : null}
+
                     {canUseEmail ? (
                       <PulseFiButton
-                        title="Send code to email"
+                        title="Send code by email"
                         variant="ghost"
                         compact
                         disabled={isSubmitting}
@@ -602,6 +753,18 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: "#8A2E1B",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  successBox: {
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: "#F0FFF7",
+    borderWidth: 1,
+    borderColor: "#BCE7CB",
+  },
+  successText: {
+    color: "#145C2E",
     fontSize: 14,
     fontWeight: "700",
   },
