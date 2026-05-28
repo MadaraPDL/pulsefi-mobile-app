@@ -252,6 +252,14 @@ export function HomeScreen() {
           <Text style={[styles.errorText, { color: colors.dangerText }]}>
             {errorMessage}
           </Text>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => void loadDashboard(true)}
+          >
+            <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>
+              Retry refresh
+            </Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -374,6 +382,10 @@ export function HomeScreen() {
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
           Summary records for this router: {selectedRouterTotals.record_count}
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          This total follows the selected router/service line, so Home and Usage
+          stay aligned for the demo.
         </Text>
       </View>
 
@@ -502,6 +514,17 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     color: "#8A2E1B",
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginTop: 6,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
   },
   cardLabel: {
     fontSize: 13,

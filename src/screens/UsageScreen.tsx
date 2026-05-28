@@ -526,6 +526,14 @@ export function UsageScreen() {
           <Text style={[styles.errorText, { color: colors.dangerText }]}>
             {errorMessage}
           </Text>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => void loadUsage(true)}
+          >
+            <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>
+              Retry refresh
+            </Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -569,9 +577,10 @@ export function UsageScreen() {
           Usage source guide
         </Text>
         <Text style={[styles.infoText, { color: colors.textMuted }]}>
-          Official usage is the subscription total from the ISP system,
-          RADIUS, or ISP API. Estimated usage is per-device data from the
-          router/CPE layer and may be approximate.
+          Official usage is the service-line total used against the
+          package limit. Estimated usage is the router/CPE per-device breakdown
+          and may be approximate. Use Official for plan-limit explanation and
+          Estimated for device-level demo explanation.
         </Text>
       </View>
 
@@ -1054,6 +1063,17 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     color: "#8A2E1B",
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    marginTop: 6,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
   },
   cardLabel: {
     fontSize: 13,
