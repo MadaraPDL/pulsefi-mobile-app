@@ -34,6 +34,7 @@ import type {
 type UsageMode = "monthly" | "daily";
 type UsageSourceFilter = "all" | "official" | "estimated";
 type UsageBreakdownMode = "download" | "upload";
+type TotalDisplaySource = "official" | "estimated";
 
 type UsageData = {
   officialSummary: MyUsageSummary | null;
@@ -234,6 +235,8 @@ export function UsageScreen() {
   const [recordPage, setRecordPage] = useState(1);
   const [breakdownMode, setBreakdownMode] =
     useState<UsageBreakdownMode>("download");
+  const [totalDisplaySource, setTotalDisplaySource] =
+    useState<TotalDisplaySource>("estimated");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -414,8 +417,13 @@ export function UsageScreen() {
     [data?.estimatedSummary]
   );
 
-  const planTotals =
-    officialTotals.record_count > 0 ? officialTotals : estimatedTotals;
+  const selectedDisplayTotals =
+    totalDisplaySource === "official" ? officialTotals : estimatedTotals;
+
+  const selectedDisplayLabel =
+    totalDisplaySource === "official"
+      ? "Official service total"
+      : "Estimated device total";
 
   const selectedPlanLimitGb = selectedSubscription
     ? toNumber(selectedSubscription.plan.data_limit_gb)
@@ -640,19 +648,55 @@ export function UsageScreen() {
           {mode === "monthly" ? "Monthly Usage" : "Daily Usage"}
         </Text>
 
+        <View style={styles.segmentRow}>
+          {(["official", "estimated"] as TotalDisplaySource[]).map((option) => {
+            const active = totalDisplaySource === option;
+
+            return (
+              <Pressable
+                key={option}
+                style={[
+                  styles.segmentButton,
+                  {
+                    backgroundColor: active
+                      ? primaryActionBackground
+                      : colors.surfaceMuted,
+                    borderColor: active ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setTotalDisplaySource(option)}
+              >
+                <Text
+                  style={[
+                    styles.segmentButtonText,
+                    {
+                      color: active ? primaryActionText : colors.textMuted,
+                    },
+                  ]}
+                >
+                  {option === "official" ? "Official" : "Estimated"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <CircularUsageGraph
-          usedMb={planTotals.total_mb}
+          usedMb={selectedDisplayTotals.total_mb}
           limitGb={selectedPlanLimitGb}
         />
 
         <Text style={[styles.bigNumber, { color: colors.text }]}>
-          {formatMb(planTotals.total_mb)}
+          {formatMb(selectedDisplayTotals.total_mb)}
         </Text>
 
         <Text style={[styles.cardText, { color: colors.textMuted }]}>
           {selectedPlanLimitGb
             ? `Used from ${selectedPlanLimitGb} GB package`
             : "No package limit available"}
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Total shown: {selectedDisplayLabel}
         </Text>
 
         <View style={styles.metricRow}>
@@ -692,8 +736,8 @@ export function UsageScreen() {
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Official usage is used for package-limit explanation. Estimated usage
-          explains per-device router/CPE breakdown.
+          Use the selector above to choose what the main graph shows. Official is
+          the ISP/service-line total; Estimated is the router/device total.
         </Text>
       </View>
 
