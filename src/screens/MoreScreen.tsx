@@ -149,7 +149,9 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
         />
       ) : null}
 
-      {activeSection === "insights" ? <InsightsScreen /> : null}
+      {activeSection === "insights" ? (
+        <InsightsScreen onOpenServiceRequests={() => setActiveSection("planRequest")} />
+      ) : null}
 
       {activeSection === "profile" ? (
         <ProfileScreen session={session} onLogout={onLogout} />

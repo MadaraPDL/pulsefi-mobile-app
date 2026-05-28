@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -38,6 +38,10 @@ type InsightsData = {
 
 type InsightsTab = "predictions" | "recommendations";
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
+
+type InsightsScreenProps = {
+  onOpenServiceRequests?: () => void;
+};
 
 const INSIGHT_PAGE_SIZE = 5;
 const QUICK_PAGE_COUNT = 3;
@@ -125,6 +129,22 @@ function getPageCount(totalItems: number) {
   return Math.max(1, Math.ceil(totalItems / INSIGHT_PAGE_SIZE));
 }
 
+function isPlanChangeRecommendation(recommendation: MyRecommendation) {
+  const type = recommendation.recommendation_type.toLowerCase();
+
+  return type === "upgrade" || type === "downgrade";
+}
+
+function getRecommendationActionLabel(recommendation: MyRecommendation) {
+  const type = recommendation.recommendation_type.toLowerCase();
+
+  if (type === "downgrade") {
+    return "Request this downgrade";
+  }
+
+  return "Request this upgrade";
+}
+
 function canRequestPlanChange(recommendation: MyRecommendation) {
   const type = recommendation.recommendation_type.toLowerCase();
   const status = recommendation.status.toLowerCase();
@@ -137,7 +157,7 @@ function canRequestPlanChange(recommendation: MyRecommendation) {
   );
 }
 
-export function InsightsScreen() {
+export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = {}) {
   const { colors } = usePulseFiTheme();
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
@@ -657,28 +677,74 @@ export function InsightsScreen() {
                       Confidence: {formatPercent(recommendation.confidence_score)}
                     </Text>
 
-                    {canRequest ? (
-                      <Pressable
-                        disabled={isCreating}
-                        style={[
-                          styles.primaryButton,
-                          {
-                            backgroundColor: primaryActionBackground,
-                            borderColor: colors.primary,
-                          },
-                          isCreating && styles.primaryButtonDisabled,
-                        ]}
-                        onPress={() => void handleRequestPlanChange(recommendation.id)}
-                      >
-                        <Text
+                    {isPlanChangeRecommendation(recommendation) ? (
+                      canRequest ? (
+                        <Pressable
+                          disabled={isCreating}
                           style={[
-                            styles.primaryButtonText,
-                            { color: primaryActionText },
+                            styles.primaryButton,
+                            {
+                              backgroundColor: primaryActionBackground,
+                              borderColor: colors.primary,
+                            },
+                            isCreating && styles.primaryButtonDisabled,
                           ]}
+                          onPress={() =>
+                            void handleRequestPlanChange(recommendation.id)
+                          }
                         >
-                          {isCreating ? "Sending..." : "Request for selected router"}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.primaryButtonText,
+                              { color: primaryActionText },
+                            ]}
+                          >
+                            {isCreating
+                              ? "Sending..."
+                              : getRecommendationActionLabel(recommendation)}
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <View style={[
+                            styles.recommendationActionBox,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: colors.border,
+                            },
+                          ]}>
+                          <Text
+                            style={[
+                              styles.smallText,
+                              { color: colors.textSubtle },
+                            ]}
+                          >
+                            This recommendation does not include a direct target
+                            plan. Open Service requests to choose a plan manually.
+                          </Text>
+
+                          {onOpenServiceRequests ? (
+                            <Pressable
+                              style={[
+                                styles.primaryButton,
+                                {
+                                  backgroundColor: primaryActionBackground,
+                                  borderColor: colors.primary,
+                                },
+                              ]}
+                              onPress={onOpenServiceRequests}
+                            >
+                              <Text
+                                style={[
+                                  styles.primaryButtonText,
+                                  { color: primaryActionText },
+                                ]}
+                              >
+                                Open Service requests
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      )
                     ) : null}
                   </View>
                 );
@@ -977,6 +1043,12 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     overflow: "hidden",
     textTransform: "capitalize",
+  },
+  recommendationActionBox: {
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
   },
   primaryButton: {
     alignItems: "center",
