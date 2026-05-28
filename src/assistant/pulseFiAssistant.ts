@@ -31,7 +31,62 @@ export type PulseFiAssistantResponse = {
   reasons: string[];
   nextSteps: string[];
   missingData: string[];
+  actions?: PulseFiAssistantAction[];
 };
+
+export type PulseFiAssistantActionTarget =
+  | "usage"
+  | "insights"
+  | "devices"
+  | "alerts"
+  | "serviceRequests";
+
+export type PulseFiAssistantAction = {
+  label: string;
+  target: PulseFiAssistantActionTarget;
+};
+
+export type PulseFiAssistantDataSource =
+  | "routers"
+  | "subscriptions"
+  | "officialUsage"
+  | "estimatedUsage"
+  | "dailyUsage"
+  | "devices"
+  | "deviceUsage"
+  | "alerts"
+  | "predictions"
+  | "recommendations"
+  | "planChangeRequests"
+  | "availablePlans"
+  | "routerCapabilities";
+
+export type PulseFiAssistantLoadState = "loaded" | "failed" | "empty";
+
+export type PulseFiAssistantSourceStatus = Record<
+  PulseFiAssistantDataSource,
+  PulseFiAssistantLoadState
+>;
+
+export const defaultPulseFiAssistantSourceStatus: PulseFiAssistantSourceStatus = {
+  routers: "empty",
+  subscriptions: "empty",
+  officialUsage: "empty",
+  estimatedUsage: "empty",
+  dailyUsage: "empty",
+  devices: "empty",
+  deviceUsage: "empty",
+  alerts: "empty",
+  predictions: "empty",
+  recommendations: "empty",
+  planChangeRequests: "empty",
+  availablePlans: "empty",
+  routerCapabilities: "empty",
+};
+
+const pulseFiAssistantDataSources = Object.keys(
+  defaultPulseFiAssistantSourceStatus
+) as PulseFiAssistantDataSource[];
 
 type NormalizedUsageTotals = {
   totalMb: number;
@@ -61,6 +116,7 @@ export type PulseFiAssistantContext = {
   planChangeRequests: MyPlanChangeRequest[];
   availablePlans: MySubscriptionPlanSummary[];
   routerCapabilities: MyRouterCapabilities | null;
+  sourceStatus: PulseFiAssistantSourceStatus;
 };
 
 type BuildPulseFiAssistantContextInput = {
@@ -78,12 +134,14 @@ type BuildPulseFiAssistantContextInput = {
   planChangeRequests?: MyPlanChangeRequest[];
   availablePlans?: MySubscriptionPlanSummary[];
   routerCapabilities?: MyRouterCapabilities | null;
+  sourceStatus?: Partial<PulseFiAssistantSourceStatus>;
 };
 
 type AssistantResponseOptions = {
   prediction?: MyPrediction | null;
   recommendation?: MyRecommendation | null;
   request?: MyPlanChangeRequest | null;
+  targetMissingNote?: string | null;
 };
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -276,83 +334,133 @@ export function inferPulseFiAssistantIntent(
   question: string
 ): PulseFiAssistantIntent {
   const normalizedQuestion = normalizeSearchText(question);
+  const weightedIntents: Record<
+    Exclude<PulseFiAssistantIntent, "overview">,
+    {
+      specificity: number;
+      keywords: Array<{ text: string; weight: number }>;
+    }
+  > = {
+    prediction: {
+      specificity: 90,
+      keywords: [
+        { text: "prediction", weight: 9 },
+        { text: "predictions", weight: 9 },
+        { text: "predict", weight: 8 },
+        { text: "forecast", weight: 8 },
+        { text: "projected", weight: 7 },
+        { text: "projection", weight: 7 },
+        { text: "risk", weight: 7 },
+        { text: "confidence", weight: 7 },
+      ],
+    },
+    recommendation: {
+      specificity: 80,
+      keywords: [
+        { text: "why am i getting", weight: 10 },
+        { text: "why did pulsefi recommend", weight: 10 },
+        { text: "recommendation", weight: 9 },
+        { text: "recommended", weight: 8 },
+        { text: "recommend this", weight: 8 },
+        { text: "suggestion", weight: 7 },
+        { text: "suggested", weight: 7 },
+      ],
+    },
+    planDecision: {
+      specificity: 70,
+      keywords: [
+        { text: "should i upgrade", weight: 11 },
+        { text: "should i downgrade", weight: 11 },
+        { text: "upgrade", weight: 9 },
+        { text: "downgrade", weight: 9 },
+        { text: "switch plan", weight: 8 },
+        { text: "switch package", weight: 8 },
+        { text: "change plan", weight: 8 },
+        { text: "change package", weight: 8 },
+        { text: "package", weight: 5 },
+        { text: "plan", weight: 4 },
+      ],
+    },
+    devices: {
+      specificity: 65,
+      keywords: [
+        { text: "devices", weight: 9 },
+        { text: "device", weight: 9 },
+        { text: "connected", weight: 7 },
+        { text: "trusted", weight: 7 },
+        { text: "untrusted", weight: 8 },
+        { text: "bandwidth", weight: 8 },
+        { text: "priority", weight: 8 },
+      ],
+    },
+    alerts: {
+      specificity: 55,
+      keywords: [
+        { text: "alerts", weight: 9 },
+        { text: "alert", weight: 9 },
+        { text: "warning", weight: 7 },
+        { text: "severity", weight: 7 },
+        { text: "critical", weight: 7 },
+      ],
+    },
+    serviceRequests: {
+      specificity: 50,
+      keywords: [
+        { text: "service request", weight: 11 },
+        { text: "service requests", weight: 11 },
+        { text: "request status", weight: 11 },
+        { text: "requests", weight: 8 },
+        { text: "request", weight: 8 },
+        { text: "pending", weight: 7 },
+        { text: "approved", weight: 7 },
+        { text: "rejected", weight: 7 },
+        { text: "status", weight: 5 },
+      ],
+    },
+    usage: {
+      specificity: 40,
+      keywords: [
+        { text: "usage", weight: 9 },
+        { text: "official", weight: 8 },
+        { text: "estimated", weight: 8 },
+        { text: "monthly", weight: 7 },
+        { text: "daily", weight: 7 },
+        { text: "graph", weight: 7 },
+        { text: "total", weight: 6 },
+        { text: "data", weight: 4 },
+        { text: "high", weight: 3 },
+      ],
+    },
+  };
 
-  if (
-    ["device", "devices", "trusted", "untrusted", "connected", "bandwidth", "priority"].some(
-      (signal) => normalizedQuestion.includes(signal)
-    )
-  ) {
-    return "devices";
-  }
+  let bestIntent: PulseFiAssistantIntent = "overview";
+  let bestScore = 0;
+  let bestSpecificity = 0;
 
-  if (
+  for (const [intent, config] of Object.entries(weightedIntents) as Array<
     [
-      "usage",
-      "data",
-      "high",
-      "official",
-      "estimated",
-      "graph",
-      "total",
-      "monthly",
-      "daily",
-    ].some((signal) => normalizedQuestion.includes(signal))
-  ) {
-    return "usage";
+      Exclude<PulseFiAssistantIntent, "overview">,
+      (typeof weightedIntents)[Exclude<PulseFiAssistantIntent, "overview">],
+    ]
+  >) {
+    const score = config.keywords.reduce((currentScore, keyword) => {
+      const normalizedKeyword = normalizeSearchText(keyword.text);
+      return normalizedQuestion.includes(normalizedKeyword)
+        ? currentScore + keyword.weight
+        : currentScore;
+    }, 0);
+
+    if (
+      score > bestScore ||
+      (score === bestScore && score > 0 && config.specificity > bestSpecificity)
+    ) {
+      bestIntent = intent;
+      bestScore = score;
+      bestSpecificity = config.specificity;
+    }
   }
 
-  if (
-    [
-      "recommendation",
-      "recommended",
-      "why am i getting",
-      "suggestion",
-      "suggest",
-    ].some((signal) => normalizedQuestion.includes(signal))
-  ) {
-    return "recommendation";
-  }
-
-  if (
-    [
-      "upgrade",
-      "downgrade",
-      "change plan",
-      "change package",
-      "switch plan",
-      "switch package",
-      "plan",
-      "package",
-    ].some((signal) => normalizedQuestion.includes(signal))
-  ) {
-    return "planDecision";
-  }
-
-  if (
-    ["prediction", "predict", "forecast", "risk", "confidence"].some((signal) =>
-      normalizedQuestion.includes(signal)
-    )
-  ) {
-    return "prediction";
-  }
-
-  if (
-    ["alert", "alerts", "warning", "severity", "critical", "read"].some(
-      (signal) => normalizedQuestion.includes(signal)
-    )
-  ) {
-    return "alerts";
-  }
-
-  if (
-    ["request", "requests", "pending", "approved", "rejected", "status"].some(
-      (signal) => normalizedQuestion.includes(signal)
-    )
-  ) {
-    return "serviceRequests";
-  }
-
-  return "overview";
+  return bestScore > 0 ? bestIntent : "overview";
 }
 
 function findRecommendedPlan(
@@ -375,7 +483,8 @@ function createResponse(
   summary: string,
   reasons: string[] = [],
   nextSteps: string[] = [],
-  missingData: string[] = []
+  missingData: string[] = [],
+  actions: PulseFiAssistantAction[] = []
 ): PulseFiAssistantResponse {
   return {
     title,
@@ -383,6 +492,7 @@ function createResponse(
     reasons,
     nextSteps,
     missingData,
+    actions,
   };
 }
 
@@ -406,6 +516,53 @@ function getPlanPercent(usageMb: number, planLimitGb: number | null) {
   return Math.round((usageMb / (planLimitGb * 1024)) * 100);
 }
 
+const failedSourceNotes: Record<PulseFiAssistantDataSource, string> = {
+  routers: "Routers could not refresh, so the selected-router context may be incomplete.",
+  subscriptions:
+    "Subscriptions could not refresh, so package and service-line details may be incomplete.",
+  officialUsage:
+    "Official usage could not refresh, so I cannot verify the latest service total right now.",
+  estimatedUsage:
+    "Estimated usage could not refresh, so I cannot verify the latest device estimate right now.",
+  dailyUsage:
+    "Daily usage could not refresh, so today's usage details may be missing.",
+  devices: "Devices could not refresh, so the connected-device list may be incomplete.",
+  deviceUsage:
+    "Device usage could not refresh, so top-device totals may be missing.",
+  alerts: "Alerts could not refresh, so I cannot verify the latest alert list right now.",
+  predictions:
+    "Predictions could not refresh, so I may not have the newest forecast.",
+  recommendations:
+    "Recommendations could not refresh, so I may not have the newest suggestion.",
+  planChangeRequests:
+    "Service requests could not refresh, so request status may be outdated.",
+  availablePlans:
+    "Available plans could not refresh, so target package details may be incomplete.",
+  routerCapabilities:
+    "Router capabilities could not refresh, so device limit and priority support may be unclear.",
+};
+
+function collectFailedSourceNotes(
+  context: PulseFiAssistantContext,
+  sources: PulseFiAssistantDataSource[]
+) {
+  return sources
+    .filter((source) => context.sourceStatus[source] === "failed")
+    .map((source) => failedSourceNotes[source]);
+}
+
+function appendUniqueNotes(target: string[], notes: string[]) {
+  for (const note of notes) {
+    if (!target.includes(note)) {
+      target.push(note);
+    }
+  }
+}
+
+function getUsageStatusSource(source: UsageDisplaySource): PulseFiAssistantDataSource {
+  return source === "official" ? "officialUsage" : "estimatedUsage";
+}
+
 export function buildPulseFiAssistantContext({
   selectedRouter,
   selectedSubscription,
@@ -421,6 +578,7 @@ export function buildPulseFiAssistantContext({
   planChangeRequests = [],
   availablePlans = [],
   routerCapabilities = null,
+  sourceStatus = {},
 }: BuildPulseFiAssistantContextInput): PulseFiAssistantContext {
   const serviceLineId =
     selectedRouter?.user_subscription_id ?? selectedSubscription?.id ?? null;
@@ -485,6 +643,10 @@ export function buildPulseFiAssistantContext({
     planChangeRequests: sortByNewest(selectedRequests),
     availablePlans,
     routerCapabilities,
+    sourceStatus: {
+      ...defaultPulseFiAssistantSourceStatus,
+      ...sourceStatus,
+    },
   };
 }
 
@@ -521,6 +683,11 @@ function answerOverview(context: PulseFiAssistantContext) {
     )} selected in the app.`
   );
 
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, pulseFiAssistantDataSources)
+  );
+
   return createResponse(
     "What I can help with",
     "I can explain the current router, usage, package, predictions, recommendations, alerts, devices, and service requests using only the data loaded for this signed-in App User.",
@@ -530,7 +697,11 @@ function answerOverview(context: PulseFiAssistantContext) {
       "Ask about recommendations before requesting a plan change.",
       "Ask about devices or alerts when something looks unusual.",
     ],
-    missingData
+    missingData,
+    [
+      { label: "Open Usage", target: "usage" },
+      { label: "Open Insights", target: "insights" },
+    ]
   );
 }
 
@@ -548,7 +719,25 @@ function answerUsage(context: PulseFiAssistantContext) {
     missingData.push("Select a router so usage can be scoped correctly.");
   }
 
-  if (selectedUsage.recordCount === 0) {
+  const selectedUsageStatusSource = getUsageStatusSource(
+    context.usageDisplaySource
+  );
+
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, [
+      "routers",
+      "subscriptions",
+      "officialUsage",
+      "estimatedUsage",
+      "dailyUsage",
+    ])
+  );
+
+  if (
+    selectedUsage.recordCount === 0 &&
+    context.sourceStatus[selectedUsageStatusSource] !== "failed"
+  ) {
     missingData.push(
       `No ${getUsageSourceLabel(context.usageDisplaySource)} records were loaded for this selected router.`
     );
@@ -566,7 +755,7 @@ function answerUsage(context: PulseFiAssistantContext) {
         toNumber(latestDailyUsage.total_mb)
       )}.`
     );
-  } else {
+  } else if (context.sourceStatus.dailyUsage !== "failed") {
     missingData.push("Daily usage was not loaded for this answer.");
   }
 
@@ -606,17 +795,33 @@ function answerUsage(context: PulseFiAssistantContext) {
       : "I can explain usage once a router is selected.",
     reasons,
     nextSteps,
-    missingData
+    missingData,
+    [{ label: "Open Usage", target: "usage" }]
   );
 }
 
 function answerRecommendation(
   context: PulseFiAssistantContext,
   recommendation: MyRecommendation | null | undefined,
-  forcePlanDecision = false
+  forcePlanDecision = false,
+  targetMissingNote: string | null | undefined = null
 ) {
   const target = recommendation ?? context.recommendations[0] ?? null;
   const missingData: string[] = [];
+
+  if (targetMissingNote) {
+    missingData.push(targetMissingNote);
+  }
+
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, [
+      "subscriptions",
+      "recommendations",
+      "availablePlans",
+      "planChangeRequests",
+    ])
+  );
 
   if (!target) {
     return createResponse(
@@ -631,7 +836,13 @@ function answerRecommendation(
         "Open Insights after predictions/recommendations are generated.",
         "Use Service requests if you already know the plan change you want.",
       ],
-      ["Recommendation data is unavailable for this answer."]
+      missingData.length
+        ? missingData
+        : ["Recommendation data is unavailable for this answer."],
+      [
+        { label: "Open Insights", target: "insights" },
+        { label: "Open Service requests", target: "serviceRequests" },
+      ]
     );
   }
 
@@ -668,6 +879,17 @@ function answerRecommendation(
     nextSteps.push("Review the recommendation text and compare it with your Usage tab before changing plans.");
   }
 
+  const actions: PulseFiAssistantAction[] = [
+    { label: "Open Insights", target: "insights" },
+  ];
+
+  if (direction !== "stay") {
+    actions.push({
+      label: "Open Service requests",
+      target: "serviceRequests",
+    });
+  }
+
   return createResponse(
     forcePlanDecision ? "Should you change plan?" : "Recommendation explained",
     direction === "stay"
@@ -675,15 +897,27 @@ function answerRecommendation(
       : "PulseFi is using the loaded recommendation, current package, and selected service line to explain the next action.",
     reasons,
     nextSteps,
-    missingData
+    missingData,
+    actions
   );
 }
 
 function answerPrediction(
   context: PulseFiAssistantContext,
-  prediction: MyPrediction | null | undefined
+  prediction: MyPrediction | null | undefined,
+  targetMissingNote: string | null | undefined = null
 ) {
   const target = prediction ?? context.predictions[0] ?? null;
+  const missingData: string[] = [];
+
+  if (targetMissingNote) {
+    missingData.push(targetMissingNote);
+  }
+
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, ["subscriptions", "predictions"])
+  );
 
   if (!target) {
     return createResponse(
@@ -698,7 +932,13 @@ function answerPrediction(
         "Open Insights again after prediction records are generated.",
         "Use Usage for current totals while prediction data is unavailable.",
       ],
-      ["Prediction data is unavailable for this answer."]
+      missingData.length
+        ? missingData
+        : ["Prediction data is unavailable for this answer."],
+      [
+        { label: "Open Insights", target: "insights" },
+        { label: "Open Usage", target: "usage" },
+      ]
     );
   }
 
@@ -729,7 +969,12 @@ function answerPrediction(
     "Prediction explained",
     "This is a PulseFi prediction for the selected service line. It is a guidance signal, not a bill or guarantee.",
     reasons,
-    nextSteps
+    nextSteps,
+    missingData,
+    [
+      { label: "Open Insights", target: "insights" },
+      { label: "Open Usage", target: "usage" },
+    ]
   );
 }
 
@@ -748,8 +993,20 @@ function answerDevices(context: PulseFiAssistantContext) {
     missingData.push("No selected router was loaded.");
   }
 
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, [
+      "routers",
+      "devices",
+      "deviceUsage",
+      "routerCapabilities",
+    ])
+  );
+
   if (!context.devices.length) {
-    missingData.push("No connected devices were loaded for this selected router.");
+    if (context.sourceStatus.devices !== "failed") {
+      missingData.push("No connected devices were loaded for this selected router.");
+    }
   } else {
     reasons.push(
       `${context.devices.length} device(s) are loaded: ${trustedCount} trusted and ${untrustedCount} untrusted.`
@@ -768,7 +1025,9 @@ function answerDevices(context: PulseFiAssistantContext) {
         .join(", ")}.`
     );
   } else {
-    missingData.push("Device usage totals were not loaded.");
+    if (context.sourceStatus.deviceUsage !== "failed") {
+      missingData.push("Device usage totals were not loaded.");
+    }
   }
 
   if (context.routerCapabilities?.can_apply_bandwidth_limit) {
@@ -776,7 +1035,9 @@ function answerDevices(context: PulseFiAssistantContext) {
   } else if (context.routerCapabilities) {
     nextSteps.push("This router does not report bandwidth-limit support.");
   } else {
-    missingData.push("Router capability data is unavailable, so I cannot confirm limits support.");
+    if (context.sourceStatus.routerCapabilities !== "failed") {
+      missingData.push("Router capability data is unavailable, so I cannot confirm limits support.");
+    }
   }
 
   if (context.routerCapabilities?.can_apply_device_priority) {
@@ -792,7 +1053,8 @@ function answerDevices(context: PulseFiAssistantContext) {
     "I am looking only at devices loaded for the selected router.",
     reasons,
     nextSteps,
-    missingData
+    missingData,
+    [{ label: "Open Devices", target: "devices" }]
   );
 }
 
@@ -809,8 +1071,15 @@ function answerAlerts(context: PulseFiAssistantContext) {
   const nextSteps: string[] = [];
   const missingData: string[] = [];
 
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, ["subscriptions", "alerts"])
+  );
+
   if (!context.alerts.length) {
-    missingData.push("No alerts were loaded for this selected service line.");
+    if (context.sourceStatus.alerts !== "failed") {
+      missingData.push("No alerts were loaded for this selected service line.");
+    }
   } else {
     reasons.push(
       `${context.alerts.length} alert(s) are loaded, including ${unreadAlerts.length} unread and ${highAlerts.length} high-severity alert(s).`
@@ -837,7 +1106,8 @@ function answerAlerts(context: PulseFiAssistantContext) {
     "Alerts are warning signals for the selected service line, not admin-only audit data.",
     reasons,
     nextSteps,
-    missingData
+    missingData,
+    [{ label: "Open Alerts", target: "alerts" }]
   );
 }
 
@@ -846,6 +1116,16 @@ function answerServiceRequests(
   request: MyPlanChangeRequest | null | undefined
 ) {
   const target = request ?? context.planChangeRequests[0] ?? null;
+  const missingData: string[] = [];
+
+  appendUniqueNotes(
+    missingData,
+    collectFailedSourceNotes(context, [
+      "subscriptions",
+      "planChangeRequests",
+      "availablePlans",
+    ])
+  );
 
   if (!target) {
     return createResponse(
@@ -860,7 +1140,10 @@ function answerServiceRequests(
         "Use Service requests when you want to ask for a plan change or suspension.",
         "If a recommendation has no direct target plan, choose the plan manually there.",
       ],
-      ["Service request data is unavailable for this answer."]
+      missingData.length
+        ? missingData
+        : ["Service request data is unavailable for this answer."],
+      [{ label: "Open Service requests", target: "serviceRequests" }]
     );
   }
 
@@ -893,7 +1176,9 @@ function answerServiceRequests(
     "Service request status",
     "I am translating the loaded request status into normal user language.",
     reasons,
-    nextSteps
+    nextSteps,
+    missingData,
+    [{ label: "Open Service requests", target: "serviceRequests" }]
   );
 }
 
@@ -906,11 +1191,25 @@ export function createPulseFiAssistantResponse(
     case "usage":
       return answerUsage(context);
     case "recommendation":
-      return answerRecommendation(context, options.recommendation, false);
+      return answerRecommendation(
+        context,
+        options.recommendation,
+        false,
+        options.targetMissingNote
+      );
     case "planDecision":
-      return answerRecommendation(context, options.recommendation, true);
+      return answerRecommendation(
+        context,
+        options.recommendation,
+        true,
+        options.targetMissingNote
+      );
     case "prediction":
-      return answerPrediction(context, options.prediction);
+      return answerPrediction(
+        context,
+        options.prediction,
+        options.targetMissingNote
+      );
     case "devices":
       return answerDevices(context);
     case "alerts":

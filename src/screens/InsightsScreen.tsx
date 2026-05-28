@@ -21,7 +21,10 @@ import {
   getMyRouters,
   getMySubscriptions,
 } from "../api/appUser";
-import type { AppTabParamList } from "../navigation/types";
+import type {
+  AppTabParamList,
+  PulseFiAssistantTargetType,
+} from "../navigation/types";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
@@ -47,8 +50,16 @@ type InsightsTab = "predictions" | "recommendations";
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
 
 type InsightsScreenProps = {
-  onOpenAssistant?: (question: string) => void;
+  onOpenAssistant?: (
+    question: string,
+    target?: AssistantLaunchTarget
+  ) => void;
   onOpenServiceRequests?: () => void;
+};
+
+type AssistantLaunchTarget = {
+  targetType: PulseFiAssistantTargetType;
+  targetId: string;
 };
 
 const INSIGHT_PAGE_SIZE = 5;
@@ -578,9 +589,9 @@ export function InsightsScreen({
   }, [recommendationStatusFilter]);
 
   const openAssistantQuestion = useCallback(
-    (question: string) => {
+    (question: string, target?: AssistantLaunchTarget) => {
       if (onOpenAssistant) {
-        onOpenAssistant(question);
+        onOpenAssistant(question, target);
         return;
       }
 
@@ -588,6 +599,8 @@ export function InsightsScreen({
         section: "assistant",
         assistantQuestion: question,
         assistantQuestionKey: Date.now(),
+        assistantTargetType: target?.targetType,
+        assistantTargetId: target?.targetId,
       });
     },
     [navigation, onOpenAssistant]
@@ -853,7 +866,10 @@ export function InsightsScreen({
                       },
                     ]}
                     onPress={() =>
-                      openAssistantQuestion("What does this prediction mean?")
+                      openAssistantQuestion("What does this prediction mean?", {
+                        targetType: "prediction",
+                        targetId: prediction.id,
+                      })
                     }
                   >
                     <Text
@@ -1040,7 +1056,11 @@ export function InsightsScreen({
                         ]}
                         onPress={() =>
                           openAssistantQuestion(
-                            "Why am I getting this recommendation?"
+                            "Why am I getting this recommendation?",
+                            {
+                              targetType: "recommendation",
+                              targetId: recommendation.id,
+                            }
                           )
                         }
                       >
@@ -1062,7 +1082,12 @@ export function InsightsScreen({
                             borderColor: colors.border,
                           },
                         ]}
-                        onPress={() => openAssistantQuestion(planQuestion)}
+                        onPress={() =>
+                          openAssistantQuestion(planQuestion, {
+                            targetType: "recommendation",
+                            targetId: recommendation.id,
+                          })
+                        }
                       >
                         <Text
                           style={[

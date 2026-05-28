@@ -7,7 +7,8 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { RouteProp } from "@react-navigation/native";
+import { useNavigation, type RouteProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 
 import { InsightsScreen } from "./InsightsScreen";
 import { ManualPlanChangeRequestScreen } from "./ManualPlanChangeRequestScreen";
@@ -18,7 +19,10 @@ import { SubscriptionsScreen } from "./SubscriptionsScreen";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
-import type { AppTabParamList } from "../navigation/types";
+import type {
+  AppTabParamList,
+  PulseFiAssistantTargetType,
+} from "../navigation/types";
 
 type MoreSection =
   | "assistant"
@@ -32,6 +36,18 @@ type MoreScreenProps = {
   session: AppUserSession;
   onLogout: () => Promise<void>;
   route: RouteProp<AppTabParamList, "More">;
+};
+
+type AssistantLaunchQuestion = {
+  question: string;
+  key: number;
+  targetType?: PulseFiAssistantTargetType | null;
+  targetId?: string | null;
+};
+
+type AssistantLaunchTarget = {
+  targetType?: PulseFiAssistantTargetType | null;
+  targetId?: string | null;
 };
 
 type MoreMenuItem = {
@@ -104,11 +120,11 @@ const sectionSubtitles: Record<MoreSection, string> = {
 export function MoreScreen({ session, onLogout, route }: MoreScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const navigation =
+    useNavigation<BottomTabNavigationProp<AppTabParamList, "More">>();
   const [activeSection, setActiveSection] = useState<MoreSection | null>(null);
-  const [localAssistantQuestion, setLocalAssistantQuestion] = useState<{
-    question: string;
-    key: number;
-  } | null>(null);
+  const [localAssistantQuestion, setLocalAssistantQuestion] =
+    useState<AssistantLaunchQuestion | null>(null);
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
 
   useEffect(() => {
@@ -125,16 +141,23 @@ export function MoreScreen({ session, onLogout, route }: MoreScreenProps) {
       setLocalAssistantQuestion({
         question: "",
         key: Date.now(),
+        targetType: null,
+        targetId: null,
       });
     }
 
     setActiveSection(section);
   }
 
-  function openAssistantWithQuestion(question: string) {
+  function openAssistantWithQuestion(
+    question: string,
+    target?: AssistantLaunchTarget
+  ) {
     setLocalAssistantQuestion({
       question,
       key: Date.now(),
+      targetType: target?.targetType ?? null,
+      targetId: target?.targetId ?? null,
     });
     setActiveSection("assistant");
   }
@@ -192,7 +215,20 @@ export function MoreScreen({ session, onLogout, route }: MoreScreenProps) {
             route.params?.assistantQuestionKey ??
             null
           }
+          initialTargetType={
+            localAssistantQuestion?.targetType ??
+            route.params?.assistantTargetType ??
+            null
+          }
+          initialTargetId={
+            localAssistantQuestion?.targetId ??
+            route.params?.assistantTargetId ??
+            null
+          }
+          onOpenUsage={() => navigation.navigate("Usage")}
           onOpenInsights={() => setActiveSection("insights")}
+          onOpenDevices={() => navigation.navigate("Devices")}
+          onOpenAlerts={() => navigation.navigate("Alerts")}
           onOpenServiceRequests={() => setActiveSection("planRequest")}
         />
       ) : null}

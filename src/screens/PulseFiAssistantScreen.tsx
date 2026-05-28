@@ -16,9 +16,15 @@ import {
 import {
   buildPulseFiAssistantContext,
   createPulseFiAssistantResponse,
+  defaultPulseFiAssistantSourceStatus,
   inferPulseFiAssistantIntent,
 } from "../assistant/pulseFiAssistant";
-import type { PulseFiAssistantResponse } from "../assistant/pulseFiAssistant";
+import type {
+  PulseFiAssistantActionTarget,
+  PulseFiAssistantLoadState,
+  PulseFiAssistantResponse,
+  PulseFiAssistantSourceStatus,
+} from "../assistant/pulseFiAssistant";
 import {
   getMyAlerts,
   getMyAvailablePlans,
@@ -53,7 +59,12 @@ import type {
 type PulseFiAssistantScreenProps = {
   initialQuestion?: string | null;
   initialQuestionKey?: number | null;
+  initialTargetType?: "prediction" | "recommendation" | null;
+  initialTargetId?: string | null;
+  onOpenUsage?: () => void;
   onOpenInsights?: () => void;
+  onOpenDevices?: () => void;
+  onOpenAlerts?: () => void;
   onOpenServiceRequests?: () => void;
 };
 
@@ -71,7 +82,22 @@ type AssistantData = {
   planChangeRequests: MyPlanChangeRequest[];
   availablePlans: MySubscriptionPlanSummary[];
   routerCapabilities: MyRouterCapabilities | null;
+  sourceStatus: PulseFiAssistantSourceStatus;
 };
+
+type AssistantLaunchTarget = {
+  targetType?: "prediction" | "recommendation" | null;
+  targetId?: string | null;
+};
+
+type AssistantSourceResult<T> = {
+  value: T;
+  status: PulseFiAssistantLoadState;
+};
+
+type AssistantActionHandlers = Partial<
+  Record<PulseFiAssistantActionTarget, () => void>
+>;
 
 type ChatMessage = {
   id: string;
@@ -87,13 +113,13 @@ const welcomeMessage: ChatMessage = {
 };
 
 const suggestedQuestions = [
-  "Why is my usage high?",
-  "Should I upgrade or downgrade?",
-  "What does this prediction mean?",
-  "Why am I getting this recommendation?",
-  "Which devices are using the most data?",
-  "What should I do about alerts?",
-  "What is my latest service request status?",
+  "Explain my current usage",
+  "Should I upgrade my package?",
+  "Explain my latest prediction",
+  "Why did PulseFi recommend this?",
+  "Which devices use the most data?",
+  "What alerts need attention?",
+  "Check my service request status",
 ];
 
 function getCurrentMonthRange() {
@@ -122,12 +148,43 @@ function getRouterDisplayName(router: MyRouter | null) {
   return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
-async function optionalApi<T>(request: Promise<T>, fallback: T) {
+async function loadAssistantSource<T>(
+  request: Promise<T>,
+  fallback: T,
+  isEmpty: (value: T) => boolean
+): Promise<AssistantSourceResult<T>> {
   try {
-    return await request;
+    const value = await request;
+
+    return {
+      value,
+      status: isEmpty(value) ? "empty" : "loaded",
+    };
   } catch {
-    return fallback;
+    return {
+      value: fallback,
+      status: "failed",
+    };
   }
+}
+
+function emptyAssistantSource<T>(value: T): AssistantSourceResult<T> {
+  return {
+    value,
+    status: "empty",
+  };
+}
+
+function isEmptyArray<T>(value: T[]) {
+  return value.length === 0;
+}
+
+function isEmptyUsageSummary(value: MyUsageSummary | null) {
+  return !value || value.totals.record_count === 0;
+}
+
+function isEmptyNullable<T>(value: T | null) {
+  return value === null;
 }
 
 function createMessageId(prefix: string) {
@@ -137,13 +194,20 @@ function createMessageId(prefix: string) {
 export function PulseFiAssistantScreen({
   initialQuestion,
   initialQuestionKey,
+  initialTargetType,
+  initialTargetId,
+  onOpenUsage,
   onOpenInsights,
+  onOpenDevices,
+  onOpenAlerts,
   onOpenServiceRequests,
 }: PulseFiAssistantScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const scrollRef = useRef<ScrollView | null>(null);
   const consumedInitialQuestionKey = useRef<number | null>(null);
+  const answerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isThinkingRef = useRef(false);
   const {
     selectedRouterId,
     setSelectedRouterId,
@@ -155,7 +219,16 @@ export function PulseFiAssistantScreen({
   const [draftQuestion, setDraftQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (answerTimeoutRef.current) {
+        clearTimeout(answerTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const loadAssistant = useCallback(async (refreshing = false) => {
     try {
@@ -167,10 +240,13 @@ export function PulseFiAssistantScreen({
 
       setErrorMessage(null);
 
-      const [routers, subscriptions] = await Promise.all([
-        getMyRouters(),
-        getMySubscriptions(),
+      const [routersResult, subscriptionsResult] = await Promise.all([
+        loadAssistantSource(getMyRouters(), [], isEmptyArray),
+        loadAssistantSource(getMySubscriptions(), [], isEmptyArray),
       ]);
+
+      const routers = routersResult.value;
+      const subscriptions = subscriptionsResult.value;
 
       const matchingRouter = selectedRouterId
         ? routers.find((router) => router.id === selectedRouterId)
@@ -190,80 +266,117 @@ export function PulseFiAssistantScreen({
       const todayRange = getTodayRange();
 
       const [
-        officialSummary,
-        estimatedSummary,
-        dailyUsage,
-        devices,
-        deviceUsage,
-        alerts,
-        predictions,
-        recommendations,
-        planChangeRequests,
-        availablePlans,
-        routerCapabilities,
+        officialSummaryResult,
+        estimatedSummaryResult,
+        dailyUsageResult,
+        devicesResult,
+        deviceUsageResult,
+        alertsResult,
+        predictionsResult,
+        recommendationsResult,
+        planChangeRequestsResult,
+        availablePlansResult,
+        routerCapabilitiesResult,
       ] = await Promise.all([
         effectiveRouterId
-          ? optionalApi(
+          ? loadAssistantSource(
               getMyUsageSummary(effectiveRouterId, {
                 startAt: monthRange.startAt,
                 endAt: monthRange.endAt,
                 sourceKind: "official",
               }),
-              null
+              null,
+              isEmptyUsageSummary
             )
-          : Promise.resolve(null),
+          : Promise.resolve(emptyAssistantSource<MyUsageSummary | null>(null)),
         effectiveRouterId
-          ? optionalApi(
+          ? loadAssistantSource(
               getMyUsageSummary(effectiveRouterId, {
                 startAt: monthRange.startAt,
                 endAt: monthRange.endAt,
                 sourceKind: "estimated",
               }),
-              null
+              null,
+              isEmptyUsageSummary
             )
-          : Promise.resolve(null),
+          : Promise.resolve(emptyAssistantSource<MyUsageSummary | null>(null)),
         effectiveRouterId
-          ? optionalApi(
+          ? loadAssistantSource(
               getMyDailyUsage(1, effectiveRouterId, {
                 startAt: todayRange.startAt,
                 endAt: todayRange.endAt,
                 sourceKind: usageDisplaySource,
               }),
-              []
+              [],
+              isEmptyArray
             )
-          : Promise.resolve([]),
+          : Promise.resolve(emptyAssistantSource<MyDailyUsage[]>([])),
         effectiveRouterId
-          ? optionalApi(getMyDevices(50, effectiveRouterId), [])
-          : Promise.resolve([]),
+          ? loadAssistantSource(
+              getMyDevices(50, effectiveRouterId),
+              [],
+              isEmptyArray
+            )
+          : Promise.resolve(emptyAssistantSource<MyDevice[]>([])),
         effectiveRouterId
-          ? optionalApi(getMyDeviceUsageList(50, effectiveRouterId), [])
-          : Promise.resolve([]),
+          ? loadAssistantSource(
+              getMyDeviceUsageList(50, effectiveRouterId),
+              [],
+              isEmptyArray
+            )
+          : Promise.resolve(emptyAssistantSource<MyDeviceUsage[]>([])),
         effectiveRouterId
-          ? optionalApi(getMyAlerts(50, effectiveRouterId), [])
-          : Promise.resolve([]),
-        optionalApi(getMyPredictions(50), []),
-        optionalApi(getMyRecommendations(50), []),
-        optionalApi(getMyPlanChangeRequests(50), []),
-        optionalApi(getMyAvailablePlans(), []),
+          ? loadAssistantSource(
+              getMyAlerts(50, effectiveRouterId),
+              [],
+              isEmptyArray
+            )
+          : Promise.resolve(emptyAssistantSource<MyAlert[]>([])),
+        loadAssistantSource(getMyPredictions(50), [], isEmptyArray),
+        loadAssistantSource(getMyRecommendations(50), [], isEmptyArray),
+        loadAssistantSource(getMyPlanChangeRequests(50), [], isEmptyArray),
+        loadAssistantSource(getMyAvailablePlans(), [], isEmptyArray),
         effectiveRouterId
-          ? optionalApi(getMyRouterCapabilities(effectiveRouterId), null)
-          : Promise.resolve(null),
+          ? loadAssistantSource(
+              getMyRouterCapabilities(effectiveRouterId),
+              null,
+              isEmptyNullable
+            )
+          : Promise.resolve(emptyAssistantSource<MyRouterCapabilities | null>(null)),
       ]);
+
+      const sourceStatus: PulseFiAssistantSourceStatus = {
+        ...defaultPulseFiAssistantSourceStatus,
+        routers: routersResult.status,
+        subscriptions: subscriptionsResult.status,
+        officialUsage: officialSummaryResult.status,
+        estimatedUsage: estimatedSummaryResult.status,
+        dailyUsage: dailyUsageResult.status,
+        devices: devicesResult.status,
+        deviceUsage: deviceUsageResult.status,
+        alerts: alertsResult.status,
+        predictions: predictionsResult.status,
+        recommendations: recommendationsResult.status,
+        planChangeRequests: planChangeRequestsResult.status,
+        availablePlans: availablePlansResult.status,
+        routerCapabilities: routerCapabilitiesResult.status,
+      };
 
       setData({
         routers,
         subscriptions,
-        officialSummary,
-        estimatedSummary,
-        dailyUsage,
-        devices,
-        deviceUsage,
-        alerts,
-        predictions,
-        recommendations,
-        planChangeRequests,
-        availablePlans,
-        routerCapabilities,
+        officialSummary: officialSummaryResult.value,
+        estimatedSummary: estimatedSummaryResult.value,
+        dailyUsage: dailyUsageResult.value,
+        devices: devicesResult.value,
+        deviceUsage: deviceUsageResult.value,
+        alerts: alertsResult.value,
+        predictions: predictionsResult.value,
+        recommendations: recommendationsResult.value,
+        planChangeRequests: planChangeRequestsResult.value,
+        availablePlans: availablePlansResult.value,
+        routerCapabilities: routerCapabilitiesResult.value,
+        sourceStatus,
       });
     } catch (error) {
       setErrorMessage(
@@ -321,20 +434,71 @@ export function PulseFiAssistantScreen({
         planChangeRequests: data?.planChangeRequests ?? [],
         availablePlans: data?.availablePlans ?? [],
         routerCapabilities: data?.routerCapabilities ?? null,
+        sourceStatus: data?.sourceStatus ?? defaultPulseFiAssistantSourceStatus,
       }),
     [data, selectedRouter, selectedSubscription, usageDisplaySource]
   );
 
+  const actionHandlers = useMemo<AssistantActionHandlers>(
+    () => ({
+      usage: onOpenUsage,
+      insights: onOpenInsights,
+      devices: onOpenDevices,
+      alerts: onOpenAlerts,
+      serviceRequests: onOpenServiceRequests,
+    }),
+    [onOpenAlerts, onOpenDevices, onOpenInsights, onOpenServiceRequests, onOpenUsage]
+  );
+
+  const resolveResponseOptions = useCallback(
+    (target?: AssistantLaunchTarget | null) => {
+      if (!target?.targetId || !target.targetType) {
+        return {};
+      }
+
+      if (target.targetType === "prediction") {
+        const prediction =
+          assistantContext.predictions.find(
+            (item) => item.id === target.targetId
+          ) ?? null;
+
+        return {
+          prediction,
+          targetMissingNote: prediction
+            ? null
+            : "I could not find the exact prediction you opened after refreshing, so I used the latest prediction for this service line instead.",
+        };
+      }
+
+      const recommendation =
+        assistantContext.recommendations.find(
+          (item) => item.id === target.targetId
+        ) ?? null;
+
+      return {
+        recommendation,
+        targetMissingNote: recommendation
+          ? null
+          : "I could not find the exact recommendation you opened after refreshing, so I used the latest recommendation for this service line instead.",
+      };
+    },
+    [assistantContext.predictions, assistantContext.recommendations]
+  );
+
   const sendQuestion = useCallback(
-    (question: string) => {
+    (question: string, target?: AssistantLaunchTarget | null) => {
       const trimmedQuestion = question.trim();
 
-      if (!trimmedQuestion) {
-        return;
+      if (!trimmedQuestion || isThinkingRef.current) {
+        return false;
       }
 
       const intent = inferPulseFiAssistantIntent(trimmedQuestion);
-      const response = createPulseFiAssistantResponse(assistantContext, intent);
+      const response = createPulseFiAssistantResponse(
+        assistantContext,
+        intent,
+        resolveResponseOptions(target)
+      );
       const userMessage: ChatMessage = {
         id: createMessageId("user"),
         role: "user",
@@ -347,14 +511,24 @@ export function PulseFiAssistantScreen({
         response,
       };
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        userMessage,
-        assistantMessage,
-      ]);
+      setMessages((currentMessages) => [...currentMessages, userMessage]);
       setDraftQuestion("");
+      isThinkingRef.current = true;
+      setIsThinking(true);
+
+      answerTimeoutRef.current = setTimeout(() => {
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          assistantMessage,
+        ]);
+        isThinkingRef.current = false;
+        setIsThinking(false);
+        answerTimeoutRef.current = null;
+      }, 420);
+
+      return true;
     },
-    [assistantContext]
+    [assistantContext, resolveResponseOptions]
   );
 
   useEffect(() => {
@@ -368,9 +542,22 @@ export function PulseFiAssistantScreen({
       return;
     }
 
-    consumedInitialQuestionKey.current = nextKey;
-    sendQuestion(initialQuestion);
-  }, [data, initialQuestion, initialQuestionKey, sendQuestion]);
+    const wasSent = sendQuestion(initialQuestion, {
+      targetType: initialTargetType ?? null,
+      targetId: initialTargetId ?? null,
+    });
+
+    if (wasSent) {
+      consumedInitialQuestionKey.current = nextKey;
+    }
+  }, [
+    data,
+    initialQuestion,
+    initialQuestionKey,
+    initialTargetId,
+    initialTargetType,
+    sendQuestion,
+  ]);
 
   if (isLoading && !data) {
     return (
@@ -434,9 +621,10 @@ export function PulseFiAssistantScreen({
           {suggestedQuestions.map((question) => (
             <Pressable
               key={question}
+              disabled={isThinking}
               style={({ pressed }) => [
                 styles.suggestionChip,
-                { opacity: pressed ? 0.72 : 1 },
+                { opacity: isThinking ? 0.5 : pressed ? 0.72 : 1 },
               ]}
               onPress={() => sendQuestion(question)}
             >
@@ -447,8 +635,14 @@ export function PulseFiAssistantScreen({
 
         <View style={styles.messageList}>
           {messages.map((message) => (
-            <ChatBubble key={message.id} message={message} />
+            <ChatBubble
+              key={message.id}
+              message={message}
+              actionHandlers={actionHandlers}
+            />
           ))}
+
+          {isThinking ? <TypingBubble /> : null}
         </View>
 
         <View style={styles.actionRow}>
@@ -487,11 +681,12 @@ export function PulseFiAssistantScreen({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Send question"
-          disabled={!draftQuestion.trim()}
+          disabled={!draftQuestion.trim() || isThinking}
           style={({ pressed }) => [
             styles.sendButton,
             {
-              opacity: !draftQuestion.trim() ? 0.45 : pressed ? 0.78 : 1,
+              opacity:
+                !draftQuestion.trim() || isThinking ? 0.45 : pressed ? 0.78 : 1,
             },
           ]}
           onPress={() => sendQuestion(draftQuestion)}
@@ -503,7 +698,13 @@ export function PulseFiAssistantScreen({
   );
 }
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({
+  message,
+  actionHandlers,
+}: {
+  message: ChatMessage;
+  actionHandlers: AssistantActionHandlers;
+}) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const isUser = message.role === "user";
@@ -518,7 +719,10 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       {isUser ? (
         <Text style={styles.userBubbleText}>{message.text}</Text>
       ) : message.response ? (
-        <AssistantResponseBubble response={message.response} />
+        <AssistantResponseBubble
+          response={message.response}
+          actionHandlers={actionHandlers}
+        />
       ) : (
         <Text style={styles.assistantBubbleText}>{message.text}</Text>
       )}
@@ -528,11 +732,16 @@ function ChatBubble({ message }: { message: ChatMessage }) {
 
 function AssistantResponseBubble({
   response,
+  actionHandlers,
 }: {
   response: PulseFiAssistantResponse;
+  actionHandlers: AssistantActionHandlers;
 }) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const visibleActions =
+    response.actions?.filter((action) => Boolean(actionHandlers[action.target])) ??
+    [];
 
   return (
     <View style={styles.responseContent}>
@@ -553,6 +762,37 @@ function AssistantResponseBubble({
           rows={response.missingData}
         />
       ) : null}
+
+      {visibleActions.length ? (
+        <View style={styles.responseActionRow}>
+          {visibleActions.map((action) => (
+            <Pressable
+              key={`${action.target}-${action.label}`}
+              style={({ pressed }) => [
+                styles.responseActionChip,
+                { opacity: pressed ? 0.72 : 1 },
+              ]}
+              onPress={() => actionHandlers[action.target]?.()}
+            >
+              <Text style={styles.responseActionText}>{action.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TypingBubble() {
+  const { colors } = usePulseFiTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <View style={[styles.bubble, styles.assistantBubble, styles.typingBubble]}>
+      <ActivityIndicator size="small" color={colors.primary} />
+      <Text style={styles.assistantBubbleText}>
+        PulseFi is checking your router context...
+      </Text>
     </View>
   );
 }
@@ -723,6 +963,30 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       borderRadius: 3,
       marginTop: 7,
       backgroundColor: colors.primary,
+    },
+    responseActionRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      marginTop: 2,
+    },
+    responseActionChip: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: 11,
+      paddingVertical: 7,
+      backgroundColor: primaryTint,
+    },
+    responseActionText: {
+      fontSize: 12,
+      fontWeight: "900",
+      color: colors.primary,
+    },
+    typingBubble: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
     },
     actionRow: {
       flexDirection: "row",
