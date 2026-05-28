@@ -263,7 +263,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.select({ ios: "padding", android: "height" })}
+      behavior={Platform.select({ ios: "padding", android: undefined })}
       keyboardVerticalOffset={Platform.OS === "ios" ? 72 : 0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
@@ -271,8 +271,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
-        extraScrollHeight={48}
-        extraHeight={140}
+        extraScrollHeight={12}
+        extraHeight={60}
         showsVerticalScrollIndicator={false}
       >
         <View

@@ -693,7 +693,7 @@ export function PulseFiAssistantScreen({
         style={[
           styles.inputBar,
           Platform.OS === "android" && keyboardHeight > 0
-            ? { marginBottom: keyboardHeight + 40 }
+            ? { marginBottom: keyboardHeight + 38 }
             : null,
         ]}
       >
