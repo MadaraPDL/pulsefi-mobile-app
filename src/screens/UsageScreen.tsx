@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -448,15 +448,6 @@ export function UsageScreen() {
     0
   );
 
-  const dailyRows = [...(data?.dailyRows ?? [])].sort((left, right) =>
-    right.usage_date.localeCompare(left.usage_date)
-  );
-
-  const maxDailyUsageMb = dailyRows.reduce(
-    (max, day) => Math.max(max, toNumber(day.totals.total_mb)),
-    0
-  );
-
   const hasPreviousRecordPage = recordPage > 1;
   const hasNextRecordPage = (data?.records.length ?? 0) === RECORD_PAGE_SIZE;
 
@@ -741,79 +732,6 @@ export function UsageScreen() {
         </Text>
       </View>
 
-      {mode === "monthly" ? (
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            Daily Breakdown
-          </Text>
-          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-            Daily rows for {activeRange.label}.
-          </Text>
-
-          {dailyRows.length ? (
-            dailyRows.map((day) => {
-              const totalMb = toNumber(day.totals.total_mb);
-              const percent =
-                maxDailyUsageMb > 0
-                  ? Math.min((totalMb / maxDailyUsageMb) * 100, 100)
-                  : 0;
-
-              return (
-                <View
-                  key={day.usage_date}
-                  style={[
-                    styles.dailyRow,
-                    {
-                      backgroundColor: colors.surfaceMuted,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <View style={styles.dailyHeader}>
-                    <Text style={[styles.dailyDate, { color: colors.text }]}>
-                      {day.usage_date}
-                    </Text>
-                    <Text style={[styles.dailyTotal, { color: colors.text }]}>
-                      {formatMb(day.totals.total_mb)}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.dailyBarTrack,
-                      { backgroundColor: colors.border },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.dailyBarFill,
-                        {
-                          backgroundColor: colors.primary,
-                          width: `${percent}%`,
-                        },
-                      ]}
-                    />
-                  </View>
-
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    Download {formatMb(day.totals.download_mb)} · Upload{" "}
-                    {formatMb(day.totals.upload_mb)}
-                  </Text>
-                </View>
-              );
-            })
-          ) : (
-            <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-              No daily usage is available for this month.
-            </Text>
-          )}
-        </View>
-      ) : null}
 
       <View
         style={[
@@ -1301,23 +1219,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-  },
-  dailyDate: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  dailyTotal: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  dailyBarTrack: {
-    height: 8,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  dailyBarFill: {
-    height: "100%",
-    borderRadius: 999,
   },
   deviceUsageRow: {
     borderWidth: 1,
