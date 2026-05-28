@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -220,6 +221,7 @@ export function PulseFiAssistantScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -227,6 +229,24 @@ export function PulseFiAssistantScreen({
       if (answerTimeoutRef.current) {
         clearTimeout(answerTimeoutRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") {
+      return undefined;
+    }
+
+    const showSubscription = Keyboard.addListener("keyboardDidShow", (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
     };
   }, []);
 
@@ -572,6 +592,7 @@ export function PulseFiAssistantScreen({
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 72 : 0}
     >
       <ScrollView
         ref={scrollRef}
@@ -668,7 +689,14 @@ export function PulseFiAssistantScreen({
         </View>
       </ScrollView>
 
-      <View style={styles.inputBar}>
+      <View
+        style={[
+          styles.inputBar,
+          Platform.OS === "android" && keyboardHeight > 0
+            ? { marginBottom: keyboardHeight + 40 }
+            : null,
+        ]}
+      >
         <TextInput
           style={styles.input}
           value={draftQuestion}

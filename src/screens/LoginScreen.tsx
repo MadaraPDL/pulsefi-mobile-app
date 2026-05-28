@@ -1,13 +1,14 @@
-import { useState } from "react";
+import {
+  useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View,
+  View
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
@@ -262,12 +263,17 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.select({ ios: "padding", android: undefined })}
+      behavior={Platform.select({ ios: "padding", android: "height" })}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 72 : 0}
       style={[styles.container, { backgroundColor: colors.background }]}
     >
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        enableOnAndroid
+        extraScrollHeight={48}
+        extraHeight={140}
+        showsVerticalScrollIndicator={false}
       >
         <View
           style={[
@@ -642,7 +648,7 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
             </>
           ) : null}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </KeyboardAvoidingView>
   );
 }
