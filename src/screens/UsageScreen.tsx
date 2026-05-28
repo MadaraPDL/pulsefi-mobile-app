@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -20,6 +20,7 @@ import {
   getMyUsageSummary,
 } from "../api/appUser";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
+import type { UsageDisplaySource } from "../state/SelectedRouterContext";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
   DecimalLike,
@@ -222,7 +223,12 @@ function CircularUsageGraph({
 
 export function UsageScreen() {
   const { colors } = usePulseFiTheme();
-  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
+  const {
+    selectedRouterId,
+    setSelectedRouterId,
+    usageDisplaySource,
+    setUsageDisplaySource,
+  } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
@@ -418,10 +424,10 @@ export function UsageScreen() {
   );
 
   const selectedDisplayTotals =
-    totalDisplaySource === "official" ? officialTotals : estimatedTotals;
+    usageDisplaySource === "official" ? officialTotals : estimatedTotals;
 
   const selectedDisplayLabel =
-    totalDisplaySource === "official"
+    usageDisplaySource === "official"
       ? "Official service total"
       : "Estimated device total";
 
@@ -640,8 +646,8 @@ export function UsageScreen() {
         </Text>
 
         <View style={styles.segmentRow}>
-          {(["official", "estimated"] as TotalDisplaySource[]).map((option) => {
-            const active = totalDisplaySource === option;
+          {(["official", "estimated"] as UsageDisplaySource[]).map((option) => {
+            const active = usageDisplaySource === option;
 
             return (
               <Pressable
@@ -655,7 +661,7 @@ export function UsageScreen() {
                     borderColor: active ? colors.primary : colors.border,
                   },
                 ]}
-                onPress={() => setTotalDisplaySource(option)}
+                onPress={() => setUsageDisplaySource(option)}
               >
                 <Text
                   style={[
@@ -880,7 +886,7 @@ export function UsageScreen() {
           Records
         </Text>
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Page {recordPage} · {activeRange.label}
+          Page {recordPage} Â· {activeRange.label}
         </Text>
 
         {data?.records.length ? (
@@ -927,7 +933,7 @@ export function UsageScreen() {
                   </View>
 
                   <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Download {formatMb(record.download_mb)} · Upload{" "}
+                    Download {formatMb(record.download_mb)} Â· Upload{" "}
                     {formatMb(record.upload_mb)}
                   </Text>
                   <Text style={[styles.smallText, { color: colors.textSubtle }]}>
@@ -1324,3 +1330,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 });
+

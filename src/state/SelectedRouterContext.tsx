@@ -6,9 +6,13 @@
 } from "react";
 import type { ReactNode } from "react";
 
+export type UsageDisplaySource = "official" | "estimated";
+
 type SelectedRouterContextValue = {
   selectedRouterId: string | null;
   setSelectedRouterId: (routerId: string | null) => void;
+  usageDisplaySource: UsageDisplaySource;
+  setUsageDisplaySource: (source: UsageDisplaySource) => void;
 };
 
 const SelectedRouterContext =
@@ -20,13 +24,17 @@ export function SelectedRouterProvider({
   children: ReactNode;
 }) {
   const [selectedRouterId, setSelectedRouterId] = useState<string | null>(null);
+  const [usageDisplaySource, setUsageDisplaySource] =
+    useState<UsageDisplaySource>("estimated");
 
   const value = useMemo(
     () => ({
       selectedRouterId,
       setSelectedRouterId,
+      usageDisplaySource,
+      setUsageDisplaySource,
     }),
-    [selectedRouterId]
+    [selectedRouterId, usageDisplaySource]
   );
 
   return (

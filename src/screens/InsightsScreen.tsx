@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -533,7 +533,7 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
                         {formatGb(prediction.predicted_usage_gb)}
                       </Text>
                       <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                        {formatDate(prediction.period_start)} →{" "}
+                        {formatDate(prediction.period_start)} â†’{" "}
                         {formatDate(prediction.period_end)}
                       </Text>
                     </View>
@@ -1118,3 +1118,4 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 });
+

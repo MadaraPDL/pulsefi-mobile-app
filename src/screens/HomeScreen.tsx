@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -29,7 +29,8 @@ import type {
 
 type DashboardData = {
   summary: AppUserSummary;
-  usageSummary: MyUsageSummary | null;
+  officialSummary: MyUsageSummary | null;
+  estimatedSummary: MyUsageSummary | null;
   subscriptions: MySubscription[];
   routers: MyRouter[];
 };
@@ -88,7 +89,11 @@ function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
 
 export function HomeScreen() {
   const { colors } = usePulseFiTheme();
-  const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
+  const {
+    selectedRouterId,
+    setSelectedRouterId,
+    usageDisplaySource,
+  } = useSelectedRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -116,27 +121,29 @@ export function HomeScreen() {
         routers[0]?.id ??
         null;
 
-      let usageSummary = null;
+      let officialSummary: MyUsageSummary | null = null;
+      let estimatedSummary: MyUsageSummary | null = null;
 
       if (effectiveRouterId) {
         try {
-          usageSummary = await getMyUsageSummary(effectiveRouterId, {
-            sourceKind: "official",
-          });
-
-          if (Number(usageSummary.totals.record_count ?? 0) === 0) {
-            usageSummary = await getMyUsageSummary(effectiveRouterId, {
+          [officialSummary, estimatedSummary] = await Promise.all([
+            getMyUsageSummary(effectiveRouterId, {
+              sourceKind: "official",
+            }),
+            getMyUsageSummary(effectiveRouterId, {
               sourceKind: "estimated",
-            });
-          }
+            }),
+          ]);
         } catch {
-          usageSummary = null;
+          officialSummary = null;
+          estimatedSummary = null;
         }
       }
 
       setData({
         summary,
-        usageSummary,
+        officialSummary,
+        estimatedSummary,
         subscriptions,
         routers,
       });
@@ -207,10 +214,23 @@ export function HomeScreen() {
     );
   }, [data?.subscriptions, selectedRouter]);
 
-  const selectedRouterTotals = useMemo(
-    () => normalizeUsageSummary(data?.usageSummary),
-    [data?.usageSummary]
+  const officialTotals = useMemo(
+    () => normalizeUsageSummary(data?.officialSummary),
+    [data?.officialSummary]
   );
+
+  const estimatedTotals = useMemo(
+    () => normalizeUsageSummary(data?.estimatedSummary),
+    [data?.estimatedSummary]
+  );
+
+  const selectedRouterTotals =
+    usageDisplaySource === "official" ? officialTotals : estimatedTotals;
+
+  const selectedRouterUsageLabel =
+    usageDisplaySource === "official"
+      ? "Official service total"
+      : "Estimated device total";
 
   const assistantMessage = useMemo(() => {
     if (!selectedRouter) {
@@ -362,7 +382,7 @@ export function HomeScreen() {
           </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            Open More → Routers to select a router.
+            Open More â†’ Routers to select a router.
           </Text>
         )}
       </View>
@@ -374,7 +394,7 @@ export function HomeScreen() {
         ]}
       >
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Selected Router Usage
+          {selectedRouterUsageLabel}
         </Text>
         <Text style={[styles.bigNumber, { color: colors.text }]}>
           {formatMb(selectedRouterTotals.total_mb)}
@@ -655,3 +675,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
+
+
+
