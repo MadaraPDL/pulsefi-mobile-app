@@ -9,14 +9,19 @@ import {
   View,
 } from "react-native";
 
+import { useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import {
+  createMyPlanChangeRequest,
   createPlanChangeRequestFromRecommendation,
+  getMyAvailablePlans,
   getMyPlanChangeRequests,
   getMyPredictions,
   getMyRecommendations,
   getMyRouters,
   getMySubscriptions,
 } from "../api/appUser";
+import type { AppTabParamList } from "../navigation/types";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
@@ -26,6 +31,7 @@ import type {
   MyRecommendation,
   MyRouter,
   MySubscription,
+  MySubscriptionPlanSummary,
 } from "../types/appUser";
 
 type InsightsData = {
@@ -34,12 +40,14 @@ type InsightsData = {
   planChangeRequests: MyPlanChangeRequest[];
   routers: MyRouter[];
   subscriptions: MySubscription[];
+  plans: MySubscriptionPlanSummary[];
 };
 
 type InsightsTab = "predictions" | "recommendations";
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
 
 type InsightsScreenProps = {
+  onOpenAssistant?: (question: string) => void;
   onOpenServiceRequests?: () => void;
 };
 
@@ -129,36 +137,279 @@ function getPageCount(totalItems: number) {
   return Math.max(1, Math.ceil(totalItems / INSIGHT_PAGE_SIZE));
 }
 
-function isPlanChangeRecommendation(recommendation: MyRecommendation) {
-  const type = recommendation.recommendation_type.toLowerCase();
+type RecommendationActionDirection = "upgrade" | "downgrade" | null;
 
-  return type === "upgrade" || type === "downgrade";
+function getRecommendationSearchText(recommendation: MyRecommendation) {
+  return [
+    recommendation.recommendation_type,
+    recommendation.recommendation_text,
+    recommendation.reason ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
-function getRecommendationActionLabel(recommendation: MyRecommendation) {
-  const type = recommendation.recommendation_type.toLowerCase();
+function normalizePlanText(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  if (type === "downgrade") {
+function isStayOrNoChangeRecommendation(recommendation: MyRecommendation) {
+  const searchableText = normalizePlanText(getRecommendationSearchText(recommendation));
+
+  const staySignals = [
+    "stay on current plan",
+    "stay on your current plan",
+    "stay with current plan",
+    "stay with your current plan",
+    "keep current plan",
+    "keep your current plan",
+    "remain on current plan",
+    "remain on your current plan",
+    "continue with current plan",
+    "current plan is enough",
+    "current package is enough",
+    "no plan change",
+    "no change needed",
+    "no upgrade needed",
+    "no downgrade needed",
+  ];
+
+  return staySignals.some((signal) => searchableText.includes(signal));
+}
+
+function hasManualPlanChangeSignal(recommendation: MyRecommendation) {
+  if (isStayOrNoChangeRecommendation(recommendation)) {
+    return false;
+  }
+
+  const searchableText = normalizePlanText(getRecommendationSearchText(recommendation));
+
+  const changeSignals = [
+    "upgrade",
+    "downgrade",
+    "switch to",
+    "move to",
+    "change to",
+    "change plan",
+    "change package",
+    "recommended plan",
+    "recommended package",
+    "recommended bundle",
+    "better plan",
+    "better package",
+    "more suitable plan",
+    "more suitable package",
+  ];
+
+  return changeSignals.some((signal) => searchableText.includes(signal));
+}
+
+function getPlanChangeDirection(
+  recommendation: MyRecommendation
+): RecommendationActionDirection {
+  if (isStayOrNoChangeRecommendation(recommendation)) {
+    return null;
+  }
+
+  const type = recommendation.recommendation_type.toLowerCase();
+  const searchableText = getRecommendationSearchText(recommendation);
+
+  if (type === "downgrade" || searchableText.includes("downgrade")) {
+    return "downgrade";
+  }
+
+  const downgradeSignals = [
+    "lower plan",
+    "lower package",
+    "cheaper",
+    "save money",
+    "reduce cost",
+    "reduce your cost",
+  ];
+
+  if (downgradeSignals.some((signal) => searchableText.includes(signal))) {
+    return "downgrade";
+  }
+
+  if (
+    type === "upgrade" ||
+    searchableText.includes("upgrade") ||
+    recommendation.recommendation_plan_id !== null ||
+    hasManualPlanChangeSignal(recommendation)
+  ) {
+    return "upgrade";
+  }
+
+  return null;
+}
+
+function getSignificantPlanTokens(planName: string) {
+  const ignored = new Set([
+    "plan",
+    "package",
+    "bundle",
+    "internet",
+    "wifi",
+    "the",
+    "and",
+    "for",
+  ]);
+
+  return normalizePlanText(planName)
+    .split(" ")
+    .filter((token) => token.length >= 3 && !ignored.has(token));
+}
+
+function getPlanMatchScore(
+  recommendationText: string,
+  plan: MySubscriptionPlanSummary
+) {
+  const planName = normalizePlanText(plan.plan_name);
+  const tokens = getSignificantPlanTokens(plan.plan_name);
+  const recommendationWords = recommendationText.split(" ");
+
+  if (!planName && tokens.length === 0) {
+    return 0;
+  }
+
+  let score = 0;
+
+  const directPhrases = planName
+    ? [
+        `upgrade to ${planName}`,
+        `downgrade to ${planName}`,
+        `switch to ${planName}`,
+        `move to ${planName}`,
+        `change to ${planName}`,
+        `recommended plan ${planName}`,
+        `recommended package ${planName}`,
+        `recommended bundle ${planName}`,
+      ]
+    : [];
+
+  if (directPhrases.some((phrase) => recommendationText.includes(phrase))) {
+    score += 200;
+  }
+
+  if (planName && recommendationText.includes(planName)) {
+    score += 120;
+  }
+
+  for (const token of tokens) {
+    if (recommendationWords.includes(token)) {
+      score += 40;
+    }
+  }
+
+  return score;
+}
+
+function findRecommendedPlanFromText(
+  recommendation: MyRecommendation,
+  plans: MySubscriptionPlanSummary[],
+  selectedSubscription: MySubscription | null
+) {
+  if (isStayOrNoChangeRecommendation(recommendation)) {
+    return null;
+  }
+
+  const searchableText = normalizePlanText(getRecommendationSearchText(recommendation));
+
+  const candidates = plans
+    .filter((plan) => selectedSubscription?.plan_id !== plan.id)
+    .map((plan) => ({
+      plan,
+      score: getPlanMatchScore(searchableText, plan),
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  return candidates[0]?.plan ?? null;
+}
+
+function getRequestTypeFromPlanComparison(
+  selectedSubscription: MySubscription,
+  targetPlan: MySubscriptionPlanSummary
+): "upgrade" | "downgrade" {
+  const currentPrice = toNumber(selectedSubscription.plan.monthly_price);
+  const targetPrice = toNumber(targetPlan.monthly_price);
+  const currentData = toNumber(selectedSubscription.plan.data_limit_gb);
+  const targetData = toNumber(targetPlan.data_limit_gb);
+  const currentSpeed = toNumber(selectedSubscription.plan.speed_limit_mbps);
+  const targetSpeed = toNumber(targetPlan.speed_limit_mbps);
+
+  if (
+    targetPrice >= currentPrice ||
+    targetData >= currentData ||
+    targetSpeed >= currentSpeed
+  ) {
+    return "upgrade";
+  }
+
+  return "downgrade";
+}
+
+function isPlanChangeRecommendation(
+  recommendation: MyRecommendation,
+  matchedPlan: MySubscriptionPlanSummary | null = null
+) {
+  if (isStayOrNoChangeRecommendation(recommendation)) {
+    return false;
+  }
+
+  return (
+    recommendation.recommendation_plan_id !== null ||
+    matchedPlan !== null ||
+    hasManualPlanChangeSignal(recommendation)
+  );
+}
+
+function getRecommendationActionLabel(
+  recommendation: MyRecommendation,
+  matchedPlan: MySubscriptionPlanSummary | null = null,
+  selectedSubscription: MySubscription | null = null
+) {
+  if (matchedPlan && selectedSubscription) {
+    const direction = getRequestTypeFromPlanComparison(selectedSubscription, matchedPlan);
+    return direction === "downgrade"
+      ? "Request this downgrade"
+      : "Request this upgrade";
+  }
+
+  const direction = getPlanChangeDirection(recommendation);
+
+  if (direction === "downgrade") {
     return "Request this downgrade";
   }
 
   return "Request this upgrade";
 }
 
-function canRequestPlanChange(recommendation: MyRecommendation) {
-  const type = recommendation.recommendation_type.toLowerCase();
+function canRequestPlanChange(
+  recommendation: MyRecommendation,
+  matchedPlan: MySubscriptionPlanSummary | null = null
+) {
   const status = recommendation.status.toLowerCase();
 
   return (
-    recommendation.recommendation_plan_id !== null &&
-    (type === "upgrade" || type === "downgrade") &&
     status !== "accepted" &&
-    status !== "rejected"
+    status !== "rejected" &&
+    (recommendation.recommendation_plan_id !== null || matchedPlan !== null)
   );
 }
 
-export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = {}) {
+export function InsightsScreen({
+  onOpenAssistant,
+  onOpenServiceRequests,
+}: InsightsScreenProps = {}) {
   const { colors } = usePulseFiTheme();
+  const navigation =
+    useNavigation<BottomTabNavigationProp<AppTabParamList, "More">>();
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
@@ -193,12 +444,14 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
         planChangeRequests,
         routers,
         subscriptions,
+        plans,
       ] = await Promise.all([
         getMyPredictions(100),
         getMyRecommendations(100),
         getMyPlanChangeRequests(50),
         getMyRouters(),
         getMySubscriptions(),
+        getMyAvailablePlans(),
       ]);
 
       setData({
@@ -207,6 +460,7 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
         planChangeRequests,
         routers,
         subscriptions,
+        plans,
       });
     } catch (error) {
       setErrorMessage(
@@ -323,14 +577,56 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
     setRecommendationPage(1);
   }, [recommendationStatusFilter]);
 
-  async function handleRequestPlanChange(recommendationId: string) {
+  const openAssistantQuestion = useCallback(
+    (question: string) => {
+      if (onOpenAssistant) {
+        onOpenAssistant(question);
+        return;
+      }
+
+      navigation.navigate("More", {
+        section: "assistant",
+        assistantQuestion: question,
+        assistantQuestionKey: Date.now(),
+      });
+    },
+    [navigation, onOpenAssistant]
+  );
+
+  async function handleRequestPlanChange(
+    recommendation: MyRecommendation,
+    matchedPlan: MySubscriptionPlanSummary | null
+  ) {
     try {
-      setCreatingRequestId(recommendationId);
+      setCreatingRequestId(recommendation.id);
       setErrorMessage(null);
       setSuccessMessage(null);
 
-      const createdRequest =
-        await createPlanChangeRequestFromRecommendation(recommendationId);
+      let createdRequest: MyPlanChangeRequest;
+
+      if (recommendation.recommendation_plan_id !== null) {
+        createdRequest = await createPlanChangeRequestFromRecommendation(
+          recommendation.id
+        );
+      } else if (matchedPlan && selectedSubscription) {
+        const requestType = getRequestTypeFromPlanComparison(
+          selectedSubscription,
+          matchedPlan
+        );
+
+        createdRequest = await createMyPlanChangeRequest({
+          user_subscription_id: selectedSubscription.id,
+          requested_plan_id: matchedPlan.id,
+          request_type: requestType,
+          reason: `Requested from PulseFi recommendation: ${recommendation.recommendation_text}`,
+          confirmation_text: "CHANGE PLAN",
+        });
+      } else {
+        setErrorMessage(
+          "This recommendation does not include a direct target plan. Open Service requests to choose a plan manually."
+        );
+        return;
+      }
 
       setData((current) => {
         if (!current) {
@@ -340,10 +636,8 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
         return {
           ...current,
           planChangeRequests: [createdRequest, ...current.planChangeRequests],
-          recommendations: current.recommendations.map((recommendation) =>
-            recommendation.id === recommendationId
-              ? { ...recommendation, status: "accepted" }
-              : recommendation
+          recommendations: current.recommendations.map((item) =>
+            item.id === recommendation.id ? { ...item, status: "accepted" } : item
           ),
         };
       });
@@ -549,6 +843,28 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
                   <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     Model: {prediction.model_version ?? "Not specified"}
                   </Text>
+
+                  <Pressable
+                    style={[
+                      styles.assistantButton,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    onPress={() =>
+                      openAssistantQuestion("What does this prediction mean?")
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.assistantButtonText,
+                        { color: colors.textMuted },
+                      ]}
+                    >
+                      What does this prediction mean?
+                    </Text>
+                  </Pressable>
                 </View>
               ))}
 
@@ -625,8 +941,44 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
           {filteredRecommendations.length ? (
             <>
               {paginatedRecommendations.map((recommendation) => {
+                const matchedPlan = findRecommendedPlanFromText(
+                  recommendation,
+                  data?.plans ?? [],
+                  selectedSubscription
+                );
+                const recommendationDirection =
+                  getPlanChangeDirection(recommendation);
+                const planQuestion =
+                  recommendationDirection === "downgrade"
+                    ? "Should I downgrade?"
+                    : "Should I upgrade?";
+                const existingPendingRequest = selectedPlanChangeRequests.find(
+                  (request) => {
+                    const requestStatus = request.status.toLowerCase();
+                    const requestType = request.request_type.toLowerCase();
+
+                    if (requestStatus !== "pending") {
+                      return false;
+                    }
+
+                    if (request.recommendation_id === recommendation.id) {
+                      return true;
+                    }
+
+                    if (matchedPlan && request.requested_plan_id === matchedPlan.id) {
+                      return true;
+                    }
+
+                    return (
+                      recommendationDirection !== null &&
+                      (requestType === "upgrade" || requestType === "downgrade")
+                    );
+                  }
+                );
                 const isCreating = creatingRequestId === recommendation.id;
-                const canRequest = canRequestPlanChange(recommendation);
+                const canRequest =
+                  canRequestPlanChange(recommendation, matchedPlan) &&
+                  !existingPendingRequest;
 
                 return (
                   <View
@@ -677,8 +1029,74 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
                       Confidence: {formatPercent(recommendation.confidence_score)}
                     </Text>
 
-                    {isPlanChangeRecommendation(recommendation) ? (
-                      canRequest ? (
+                    <View style={styles.assistantButtonRow}>
+                      <Pressable
+                        style={[
+                          styles.assistantButton,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                        onPress={() =>
+                          openAssistantQuestion(
+                            "Why am I getting this recommendation?"
+                          )
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.assistantButtonText,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          Why am I getting this recommendation?
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={[
+                          styles.assistantButton,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                        onPress={() => openAssistantQuestion(planQuestion)}
+                      >
+                        <Text
+                          style={[
+                            styles.assistantButtonText,
+                            { color: colors.textMuted },
+                          ]}
+                        >
+                          {planQuestion}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {isPlanChangeRecommendation(recommendation, matchedPlan) ? (
+                      existingPendingRequest ? (
+                        <View
+                          style={[
+                            styles.recommendationActionBox,
+                            {
+                              backgroundColor: colors.surface,
+                              borderColor: colors.border,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.smallText,
+                              { color: colors.textSubtle },
+                            ]}
+                          >
+                            Request already pending. Check Recent Requests for
+                            the current upgrade or downgrade request status.
+                          </Text>
+                        </View>
+                      ) : canRequest ? (
                         <Pressable
                           disabled={isCreating}
                           style={[
@@ -690,7 +1108,7 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
                             isCreating && styles.primaryButtonDisabled,
                           ]}
                           onPress={() =>
-                            void handleRequestPlanChange(recommendation.id)
+                            void handleRequestPlanChange(recommendation, matchedPlan)
                           }
                         >
                           <Text
@@ -701,7 +1119,7 @@ export function InsightsScreen({ onOpenServiceRequests }: InsightsScreenProps = 
                           >
                             {isCreating
                               ? "Sending..."
-                              : getRecommendationActionLabel(recommendation)}
+                              : getRecommendationActionLabel(recommendation, matchedPlan, selectedSubscription)}
                           </Text>
                         </Pressable>
                       ) : (
@@ -1049,6 +1467,23 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     padding: 12,
+  },
+  assistantButtonRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  assistantButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  assistantButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
   },
   primaryButton: {
     alignItems: "center",

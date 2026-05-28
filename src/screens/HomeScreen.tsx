@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -12,6 +13,7 @@ import {
 
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
+import type { AppTabParamList } from "../navigation/types";
 
 import {
   getMyRouters,
@@ -34,6 +36,17 @@ type DashboardData = {
   subscriptions: MySubscription[];
   routers: MyRouter[];
 };
+
+const homeAssistantPrompts: Array<{
+  title: string;
+  question: string;
+}> = [
+  { title: "Why is my usage high?", question: "Why is my usage high?" },
+  {
+    title: "Should I change plan?",
+    question: "Should I upgrade or downgrade?",
+  },
+];
 
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -89,6 +102,8 @@ function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
 
 export function HomeScreen() {
   const { colors } = usePulseFiTheme();
+  const navigation =
+    useNavigation<BottomTabNavigationProp<AppTabParamList, "Home">>();
   const {
     selectedRouterId,
     setSelectedRouterId,
@@ -232,21 +247,16 @@ export function HomeScreen() {
       ? "Official service total"
       : "Estimated device total";
 
-  const assistantMessage = useMemo(() => {
-    if (!selectedRouter) {
-      return "Select a router first so PulseFi can explain the correct service line.";
-    }
-
-    if (!selectedSubscription) {
-      return "This router is not linked to a package yet, so PulseFi can show router data but cannot compare it to a plan limit.";
-    }
-
-    if (selectedRouterTotals.record_count === 0) {
-      return "No usage records are loaded for this selected router yet. Run simulator ingestion or check the ISP Admin dashboard.";
-    }
-
-    return "This summary follows your selected router/service line. Use Usage for monthly history and Insights for predictions and recommendations.";
-  }, [selectedRouter, selectedSubscription, selectedRouterTotals.record_count]);
+  const openAssistant = useCallback(
+    (question: string) => {
+      navigation.navigate("More", {
+        section: "assistant",
+        assistantQuestion: question,
+        assistantQuestionKey: Date.now(),
+      });
+    },
+    [navigation]
+  );
 
   if (isLoading && !data) {
     return (
@@ -449,15 +459,48 @@ export function HomeScreen() {
           PulseFi Assistant
         </Text>
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Quick guidance
+          Chat with PulseFi Assistant
         </Text>
         <Text style={[styles.cardText, { color: colors.textMuted }]}>
-          {assistantMessage}
+          Ask a plain-language question about this selected router, usage, or
+          package.
         </Text>
-        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Assistant details now live in Usage and Insights so the answers use the
-          same selected-router data shown on each page.
-        </Text>
+
+        <View style={styles.assistantActionRow}>
+          {homeAssistantPrompts.map((prompt) => {
+            return (
+              <Pressable
+                key={prompt.question}
+                style={[
+                  styles.assistantChoice,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                onPress={() => openAssistant(prompt.question)}
+              >
+                <Text
+                  style={[
+                    styles.assistantChoiceText,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  {prompt.title}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          style={[styles.assistantChatButton, { backgroundColor: colors.primary }]}
+          onPress={() => openAssistant("What can you help me with?")}
+        >
+          <Text style={[styles.assistantChatButtonText, { color: colors.buttonText }]}>
+            Open Assistant chat
+          </Text>
+        </Pressable>
       </View>
 
       <View
@@ -651,6 +694,31 @@ const styles = StyleSheet.create({
   smallText: {
     fontSize: 13,
     color: "#6B7888",
+  },
+  assistantActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  assistantChoice: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  assistantChoiceText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  assistantChatButton: {
+    alignSelf: "flex-start",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  assistantChatButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
   },
   routerPicker: {
     flexDirection: "row",

@@ -100,7 +100,9 @@ export function AppTabs({ session, onLogout }: AppTabsProps) {
       <Tab.Screen name="Devices" component={DevicesScreen} />
       <Tab.Screen name="Alerts" component={AlertsScreen} />
       <Tab.Screen name="More">
-        {() => <MoreScreen session={session} onLogout={onLogout} />}
+        {({ route }) => (
+          <MoreScreen session={session} onLogout={onLogout} route={route} />
+        )}
       </Tab.Screen>
       </Tab.Navigator>
     </SelectedRouterProvider>

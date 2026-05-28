@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -7,17 +7,21 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { RouteProp } from "@react-navigation/native";
 
 import { InsightsScreen } from "./InsightsScreen";
 import { ManualPlanChangeRequestScreen } from "./ManualPlanChangeRequestScreen";
 import { ProfileScreen } from "./ProfileScreen";
+import { PulseFiAssistantScreen } from "./PulseFiAssistantScreen";
 import { RoutersScreen } from "./RoutersScreen";
 import { SubscriptionsScreen } from "./SubscriptionsScreen";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type { AppUserSession } from "../types/appUser";
+import type { AppTabParamList } from "../navigation/types";
 
 type MoreSection =
+  | "assistant"
   | "plans"
   | "routers"
   | "planRequest"
@@ -27,6 +31,7 @@ type MoreSection =
 type MoreScreenProps = {
   session: AppUserSession;
   onLogout: () => Promise<void>;
+  route: RouteProp<AppTabParamList, "More">;
 };
 
 type MoreMenuItem = {
@@ -37,6 +42,12 @@ type MoreMenuItem = {
 };
 
 const internetItems: MoreMenuItem[] = [
+  {
+    key: "assistant",
+    title: "PulseFi Assistant",
+    subtitle: "Ask contextual questions about usage, plans, alerts, and devices.",
+    icon: "chatbubble-ellipses-outline",
+  },
   {
     key: "routers",
     title: "My routers",
@@ -73,6 +84,7 @@ const accountItems: MoreMenuItem[] = [
 ];
 
 const sectionTitles: Record<MoreSection, string> = {
+  assistant: "PulseFi Assistant",
   routers: "My routers",
   plans: "My package",
   planRequest: "Service requests",
@@ -81,6 +93,7 @@ const sectionTitles: Record<MoreSection, string> = {
 };
 
 const sectionSubtitles: Record<MoreSection, string> = {
+  assistant: "Get plain-language help for the selected router and service line.",
   routers: "Select the router/service you want PulseFi to show.",
   plans: "Review your current package and subscription details.",
   planRequest: "Send service requests to your ISP Admin.",
@@ -88,11 +101,43 @@ const sectionSubtitles: Record<MoreSection, string> = {
   profile: "Update account settings and security options.",
 };
 
-export function MoreScreen({ session, onLogout }: MoreScreenProps) {
+export function MoreScreen({ session, onLogout, route }: MoreScreenProps) {
   const { colors } = usePulseFiTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [activeSection, setActiveSection] = useState<MoreSection | null>(null);
+  const [localAssistantQuestion, setLocalAssistantQuestion] = useState<{
+    question: string;
+    key: number;
+  } | null>(null);
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
+
+  useEffect(() => {
+    if (route.params?.section) {
+      if (route.params.assistantQuestionKey) {
+        setLocalAssistantQuestion(null);
+      }
+      setActiveSection(route.params.section);
+    }
+  }, [route.params?.assistantQuestionKey, route.params?.section]);
+
+  function handleSelectSection(section: MoreSection) {
+    if (section === "assistant") {
+      setLocalAssistantQuestion({
+        question: "",
+        key: Date.now(),
+      });
+    }
+
+    setActiveSection(section);
+  }
+
+  function openAssistantWithQuestion(question: string) {
+    setLocalAssistantQuestion({
+      question,
+      key: Date.now(),
+    });
+    setActiveSection("assistant");
+  }
 
   if (!activeSection) {
     return (
@@ -112,14 +157,14 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
           title="Your internet"
           subtitle="Router, usage package, and plan actions."
           items={internetItems}
-          onSelect={setActiveSection}
+          onSelect={handleSelectSection}
         />
 
         <MoreGroup
           title="Account & security"
           subtitle="Profile, theme, MFA, and sign out."
           items={accountItems}
-          onSelect={setActiveSection}
+          onSelect={handleSelectSection}
         />
       </ScrollView>
     );
@@ -134,6 +179,23 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
       />
 
       {activeSection === "plans" ? <SubscriptionsScreen /> : null}
+
+      {activeSection === "assistant" ? (
+        <PulseFiAssistantScreen
+          initialQuestion={
+            localAssistantQuestion?.question ??
+            route.params?.assistantQuestion ??
+            null
+          }
+          initialQuestionKey={
+            localAssistantQuestion?.key ??
+            route.params?.assistantQuestionKey ??
+            null
+          }
+          onOpenInsights={() => setActiveSection("insights")}
+          onOpenServiceRequests={() => setActiveSection("planRequest")}
+        />
+      ) : null}
 
       {activeSection === "routers" ? (
         <RoutersScreen
@@ -150,7 +212,10 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
       ) : null}
 
       {activeSection === "insights" ? (
-        <InsightsScreen onOpenServiceRequests={() => setActiveSection("planRequest")} />
+        <InsightsScreen
+          onOpenAssistant={openAssistantWithQuestion}
+          onOpenServiceRequests={() => setActiveSection("planRequest")}
+        />
       ) : null}
 
       {activeSection === "profile" ? (

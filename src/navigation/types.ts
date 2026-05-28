@@ -8,5 +8,11 @@ export type AppTabParamList = {
   Usage: undefined;
   Devices: undefined;
   Alerts: undefined;
-  More: undefined;
+  More:
+    | {
+        section?: "assistant" | "plans" | "routers" | "planRequest" | "insights" | "profile";
+        assistantQuestion?: string;
+        assistantQuestionKey?: number;
+      }
+    | undefined;
 };
