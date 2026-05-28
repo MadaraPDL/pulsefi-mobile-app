@@ -8,7 +8,6 @@ import {
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
-import { AssistantScreen } from "./AssistantScreen";
 import { InsightsScreen } from "./InsightsScreen";
 import { ManualPlanChangeRequestScreen } from "./ManualPlanChangeRequestScreen";
 import { ProfileScreen } from "./ProfileScreen";
@@ -23,7 +22,6 @@ type MoreSection =
   | "routers"
   | "planRequest"
   | "insights"
-  | "assistant"
   | "profile";
 
 type MoreScreenProps = {
@@ -63,12 +61,6 @@ const internetItems: MoreMenuItem[] = [
     subtitle: "See usage forecasts and PulseFi suggestions.",
     icon: "bulb-outline",
   },
-  {
-    key: "assistant",
-    title: "PulseFi Assistant",
-    subtitle: "Ask simple questions about usage, alerts, and next actions.",
-    icon: "chatbubble-ellipses-outline",
-  },
 ];
 
 const accountItems: MoreMenuItem[] = [
@@ -85,7 +77,6 @@ const sectionTitles: Record<MoreSection, string> = {
   plans: "My package",
   planRequest: "Request a plan change",
   insights: "Predictions & recommendations",
-  assistant: "PulseFi Assistant",
   profile: "Profile & security",
 };
 
@@ -94,7 +85,6 @@ const sectionSubtitles: Record<MoreSection, string> = {
   plans: "Review your current package and subscription details.",
   planRequest: "Send a package change request to your ISP.",
   insights: "Check predictions and recommendations for your account.",
-  assistant: "Ask a rules-based helper about your current PulseFi data.",
   profile: "Update account settings and security options.",
 };
 
@@ -160,8 +150,6 @@ export function MoreScreen({ session, onLogout }: MoreScreenProps) {
       ) : null}
 
       {activeSection === "insights" ? <InsightsScreen /> : null}
-
-      {activeSection === "assistant" ? <AssistantScreen /> : null}
 
       {activeSection === "profile" ? (
         <ProfileScreen session={session} onLogout={onLogout} />

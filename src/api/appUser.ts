@@ -1,4 +1,4 @@
-﻿import { apiRequest } from "./client";
+import { apiRequest } from "./client";
 function buildQuery(params: Record<string, string | number | null | undefined>) {
   const query = new URLSearchParams();
 
@@ -47,21 +47,65 @@ export function getMySubscription(subscriptionId: string) {
   return apiRequest<MySubscription>(`/me/subscriptions/${subscriptionId}`);
 }
 
-export function getMyUsageSummary(routerId?: string | null) {
+export type UsageSourceKind = "official" | "estimated";
+
+export function getMyUsageSummary(
+  routerId?: string | null,
+  options: {
+    startAt?: string | null;
+    endAt?: string | null;
+    sourceKind?: UsageSourceKind | null;
+  } = {}
+) {
   return apiRequest<MyUsageSummary>(
-    `/me/usage/summary${buildQuery({ router_id: routerId })}`
+    `/me/usage/summary${buildQuery({
+      router_id: routerId,
+      start_at: options.startAt,
+      end_at: options.endAt,
+      source_kind: options.sourceKind,
+    })}`
   );
 }
 
-export function getMyUsageRecords(limit = 20, routerId?: string | null) {
+export function getMyUsageRecords(
+  limit = 20,
+  routerId?: string | null,
+  options: {
+    offset?: number;
+    startAt?: string | null;
+    endAt?: string | null;
+    sourceKind?: UsageSourceKind | null;
+  } = {}
+) {
   return apiRequest<MyUsageRecord[]>(
-    `/me/usage/records${buildQuery({ limit, router_id: routerId })}`
+    `/me/usage/records${buildQuery({
+      limit,
+      offset: options.offset ?? 0,
+      router_id: routerId,
+      start_at: options.startAt,
+      end_at: options.endAt,
+      source_kind: options.sourceKind,
+    })}`
   );
 }
 
-export function getMyDailyUsage(days = 7, routerId?: string | null) {
+export function getMyDailyUsage(
+  days = 7,
+  routerId?: string | null,
+  options: {
+    startAt?: string | null;
+    endAt?: string | null;
+    sourceKind?: UsageSourceKind | null;
+  } = {}
+) {
   return apiRequest<MyDailyUsage[]>(
-    `/me/usage/daily${buildQuery({ days, router_id: routerId })}`
+    `/me/usage/daily${buildQuery({
+      days,
+      router_id: routerId,
+      start_at: options.startAt,
+      end_at: options.endAt,
+      source_kind: options.sourceKind,
+    })}`
   );
 }
 
@@ -121,25 +165,29 @@ export function markMyAlertAsRead(alertId: string) {
   });
 }
 
-export function getMyPredictions(limit = 20) {
-  return apiRequest<MyPrediction[]>(`/me/predictions?limit=${limit}`);
+export function getMyPredictions(limit = 20, offset = 0) {
+  return apiRequest<MyPrediction[]>(
+    `/me/predictions${buildQuery({ limit, offset })}`
+  );
 }
 
 export function getMyPrediction(predictionId: string) {
   return apiRequest<MyPrediction>(`/me/predictions/${predictionId}`);
 }
 
-export function getMyRecommendations(limit = 20) {
-  return apiRequest<MyRecommendation[]>(`/me/recommendations?limit=${limit}`);
+export function getMyRecommendations(limit = 20, offset = 0) {
+  return apiRequest<MyRecommendation[]>(
+    `/me/recommendations${buildQuery({ limit, offset })}`
+  );
 }
 
 export function getMyRecommendation(recommendationId: string) {
   return apiRequest<MyRecommendation>(`/me/recommendations/${recommendationId}`);
 }
 
-export function getMyPlanChangeRequests(limit = 20) {
+export function getMyPlanChangeRequests(limit = 20, offset = 0) {
   return apiRequest<MyPlanChangeRequest[]>(
-    `/me/plan-change-requests?limit=${limit}`
+    `/me/plan-change-requests${buildQuery({ limit, offset })}`
   );
 }
 

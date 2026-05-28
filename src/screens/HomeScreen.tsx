@@ -198,6 +198,22 @@ export function HomeScreen() {
     [data?.usageSummary]
   );
 
+  const assistantMessage = useMemo(() => {
+    if (!selectedRouter) {
+      return "Select a router first so PulseFi can explain the correct service line.";
+    }
+
+    if (!selectedSubscription) {
+      return "This router is not linked to a package yet, so PulseFi can show router data but cannot compare it to a plan limit.";
+    }
+
+    if (selectedRouterTotals.record_count === 0) {
+      return "No usage records are loaded for this selected router yet. Run simulator ingestion or check the ISP Admin dashboard.";
+    }
+
+    return "This summary follows your selected router/service line. Use Usage for monthly history and Insights for predictions and recommendations.";
+  }, [selectedRouter, selectedSubscription, selectedRouterTotals.record_count]);
+
   if (isLoading && !data) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
@@ -386,6 +402,27 @@ export function HomeScreen() {
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
           This total follows the selected router/service line, so Home and Usage
           stay aligned for the demo.
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          PulseFi Assistant
+        </Text>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          Quick guidance
+        </Text>
+        <Text style={[styles.cardText, { color: colors.textMuted }]}>
+          {assistantMessage}
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Assistant details now live in Usage and Insights so the answers use the
+          same selected-router data shown on each page.
         </Text>
       </View>
 
