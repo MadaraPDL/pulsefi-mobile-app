@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,20 +9,16 @@ import {
   View,
 } from "react-native";
 
-import { usePulseFiTheme } from "../theme/usePulseFiTheme";
-import { useSelectedRouter } from "../state/SelectedRouterContext";
-
 import {
   createPlanChangeRequestFromRecommendation,
-  getMyPlanChangeRequest,
   getMyPlanChangeRequests,
-  getMyPrediction,
   getMyPredictions,
-  getMyRecommendation,
   getMyRecommendations,
   getMyRouters,
   getMySubscriptions,
 } from "../api/appUser";
+import { useSelectedRouter } from "../state/SelectedRouterContext";
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
   DecimalLike,
   MyPlanChangeRequest,
@@ -40,8 +36,12 @@ type InsightsData = {
   subscriptions: MySubscription[];
 };
 
+type InsightPeriodMode = "monthly" | "daily";
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
-type PlanRequestStatusFilter = "all" | "pending" | "approved" | "rejected";
+
+const INSIGHT_PAGE_SIZE = 5;
+const QUICK_PAGE_COUNT = 3;
+const USER_VISIBLE_INSIGHT_DAYS = 90;
 
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -73,6 +73,88 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
+function getMonthDate(monthOffset: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+}
+
+function getDayDate(dayOffset: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
+}
+
+function getMonthRange(monthOffset: number) {
+  const month = getMonthDate(monthOffset);
+  const start = new Date(month.getFullYear(), month.getMonth(), 1);
+  const end = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+
+  return {
+    start,
+    end,
+    label: start.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+    }),
+  };
+}
+
+function getDayRange(dayOffset: number) {
+  const day = getDayDate(dayOffset);
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+
+  return {
+    start,
+    end,
+    label: start.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+  };
+}
+
+function isWithinUserVisibleWindow(value: string | null | undefined) {
+  if (!value) {
+    return true;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return true;
+  }
+
+  const cutoff = Date.now() - USER_VISIBLE_INSIGHT_DAYS * 24 * 60 * 60 * 1000;
+  return timestamp >= cutoff;
+}
+
+function isDateInsideRange(value: string | null | undefined, start: Date, end: Date) {
+  if (!value) {
+    return false;
+  }
+
+  const timestamp = new Date(value).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+
+  return timestamp >= start.getTime() && timestamp < end.getTime();
+}
+
+function predictionOverlapsRange(prediction: MyPrediction, start: Date, end: Date) {
+  const periodStart = new Date(prediction.period_start).getTime();
+  const periodEnd = new Date(prediction.period_end).getTime();
+
+  if (Number.isNaN(periodStart) || Number.isNaN(periodEnd)) {
+    return isDateInsideRange(prediction.created_at, start, end);
+  }
+
+  return periodStart < end.getTime() && periodEnd >= start.getTime();
+}
+
 function getRiskStyle(
   riskLevel: string,
   colors: ReturnType<typeof usePulseFiTheme>["colors"]
@@ -102,6 +184,14 @@ function getRiskStyle(
   };
 }
 
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
+}
+
+function getPageCount(totalItems: number) {
+  return Math.max(1, Math.ceil(totalItems / INSIGHT_PAGE_SIZE));
+}
+
 function canRequestPlanChange(recommendation: MyRecommendation) {
   const type = recommendation.recommendation_type.toLowerCase();
   const status = recommendation.status.toLowerCase();
@@ -114,33 +204,32 @@ function canRequestPlanChange(recommendation: MyRecommendation) {
   );
 }
 
-function getRouterDisplayName(router: MyRouter | null) {
-  return router?.router_name ?? router?.router_model ?? "No router selected";
-}
-
 export function InsightsScreen() {
   const { colors } = usePulseFiTheme();
   const { selectedRouterId, setSelectedRouterId } = useSelectedRouter();
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
+
   const [data, setData] = useState<InsightsData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [creatingRequestId, setCreatingRequestId] = useState<string | null>(null);
-  const [loadingDetailKey, setLoadingDetailKey] = useState<string | null>(null);
-  const [selectedPrediction, setSelectedPrediction] =
-    useState<MyPrediction | null>(null);
-  const [selectedRecommendation, setSelectedRecommendation] =
-    useState<MyRecommendation | null>(null);
-  const [selectedPlanChangeRequest, setSelectedPlanChangeRequest] =
-    useState<MyPlanChangeRequest | null>(null);
+  const [periodMode, setPeriodMode] = useState<InsightPeriodMode>("monthly");
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [dayOffset, setDayOffset] = useState(0);
+  const [predictionPage, setPredictionPage] = useState(1);
+  const [recommendationPage, setRecommendationPage] = useState(1);
   const [recommendationStatusFilter, setRecommendationStatusFilter] =
     useState<RecommendationStatusFilter>("all");
-  const [planRequestStatusFilter, setPlanRequestStatusFilter] =
-    useState<PlanRequestStatusFilter>("all");
+  const [creatingRequestId, setCreatingRequestId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const activeRange = useMemo(() => {
+    return periodMode === "monthly"
+      ? getMonthRange(monthOffset)
+      : getDayRange(dayOffset);
+  }, [dayOffset, monthOffset, periodMode]);
 
   const loadInsights = useCallback(async (refreshing = false) => {
     try {
@@ -160,8 +249,8 @@ export function InsightsScreen() {
         routers,
         subscriptions,
       ] = await Promise.all([
-        getMyPredictions(50),
-        getMyRecommendations(50),
+        getMyPredictions(100),
+        getMyRecommendations(100),
         getMyPlanChangeRequests(50),
         getMyRouters(),
         getMySubscriptions(),
@@ -176,9 +265,7 @@ export function InsightsScreen() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load insights."
+        error instanceof Error ? error.message : "Could not load insights."
       );
     } finally {
       setIsLoading(false);
@@ -221,26 +308,63 @@ export function InsightsScreen() {
 
   const selectedServiceLineId = selectedRouter?.user_subscription_id ?? null;
 
-  const selectedPredictions = useMemo(() => {
+  const periodPredictions = useMemo(() => {
     if (!selectedServiceLineId) {
       return [];
     }
 
     return (data?.predictions ?? []).filter(
-      (prediction) => prediction.user_subscription_id === selectedServiceLineId
+      (prediction) =>
+        prediction.user_subscription_id === selectedServiceLineId &&
+        isWithinUserVisibleWindow(prediction.created_at ?? prediction.prediction_date) &&
+        predictionOverlapsRange(prediction, activeRange.start, activeRange.end)
     );
-  }, [data?.predictions, selectedServiceLineId]);
+  }, [activeRange.end, activeRange.start, data?.predictions, selectedServiceLineId]);
 
-  const selectedRecommendations = useMemo(() => {
+  const periodPredictionIds = useMemo(() => {
+    return new Set(periodPredictions.map((prediction) => prediction.id));
+  }, [periodPredictions]);
+
+  const periodRecommendations = useMemo(() => {
     if (!selectedServiceLineId) {
       return [];
     }
 
-    return (data?.recommendations ?? []).filter(
-      (recommendation) =>
-        recommendation.user_subscription_id === selectedServiceLineId
-    );
-  }, [data?.recommendations, selectedServiceLineId]);
+    return (data?.recommendations ?? []).filter((recommendation) => {
+      if (recommendation.user_subscription_id !== selectedServiceLineId) {
+        return false;
+      }
+
+      if (!isWithinUserVisibleWindow(recommendation.created_at)) {
+        return false;
+      }
+
+      const belongsToVisiblePrediction =
+        recommendation.prediction_id !== null &&
+        periodPredictionIds.has(recommendation.prediction_id);
+
+      return (
+        belongsToVisiblePrediction ||
+        isDateInsideRange(recommendation.created_at, activeRange.start, activeRange.end)
+      );
+    });
+  }, [
+    activeRange.end,
+    activeRange.start,
+    data?.recommendations,
+    periodPredictionIds,
+    selectedServiceLineId,
+  ]);
+
+  const filteredRecommendations = useMemo(() => {
+    return periodRecommendations.filter((recommendation) => {
+      if (recommendationStatusFilter === "all") {
+        return true;
+      }
+
+      return recommendation.status.toLowerCase() === recommendationStatusFilter;
+    });
+  }, [periodRecommendations, recommendationStatusFilter]);
 
   const selectedPlanChangeRequests = useMemo(() => {
     if (!selectedServiceLineId) {
@@ -252,129 +376,31 @@ export function InsightsScreen() {
     );
   }, [data?.planChangeRequests, selectedServiceLineId]);
 
-  const filteredRecommendations = useMemo(() => {
-    return selectedRecommendations.filter((recommendation) => {
-      if (recommendationStatusFilter === "all") {
-        return true;
-      }
+  const predictionPageCount = getPageCount(periodPredictions.length);
+  const safePredictionPage = Math.min(predictionPage, predictionPageCount);
+  const paginatedPredictions = periodPredictions.slice(
+    (safePredictionPage - 1) * INSIGHT_PAGE_SIZE,
+    safePredictionPage * INSIGHT_PAGE_SIZE
+  );
 
-      return (
-        recommendation.status.toLowerCase() === recommendationStatusFilter
-      );
-    });
-  }, [selectedRecommendations, recommendationStatusFilter]);
+  const recommendationPageCount = getPageCount(filteredRecommendations.length);
+  const safeRecommendationPage = Math.min(
+    recommendationPage,
+    recommendationPageCount
+  );
+  const paginatedRecommendations = filteredRecommendations.slice(
+    (safeRecommendationPage - 1) * INSIGHT_PAGE_SIZE,
+    safeRecommendationPage * INSIGHT_PAGE_SIZE
+  );
 
-  const filteredPlanChangeRequests = useMemo(() => {
-    return selectedPlanChangeRequests.filter((request) => {
-      if (planRequestStatusFilter === "all") {
-        return true;
-      }
+  useEffect(() => {
+    setPredictionPage(1);
+    setRecommendationPage(1);
+  }, [activeRange.label, periodMode, selectedServiceLineId]);
 
-      return request.status.toLowerCase() === planRequestStatusFilter;
-    });
-  }, [selectedPlanChangeRequests, planRequestStatusFilter]);
-
-  async function handleViewPredictionDetail(predictionId: string) {
-    if (selectedPrediction?.id === predictionId) {
-      setSelectedPrediction(null);
-      return;
-    }
-
-    try {
-      setLoadingDetailKey(`prediction:${predictionId}`);
-      setErrorMessage(null);
-
-      const detail = await getMyPrediction(predictionId);
-      setSelectedPrediction(detail);
-
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              predictions: current.predictions.map((prediction) =>
-                prediction.id === detail.id ? detail : prediction
-              ),
-            }
-          : current
-      );
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load prediction details."
-      );
-    } finally {
-      setLoadingDetailKey(null);
-    }
-  }
-
-  async function handleViewRecommendationDetail(recommendationId: string) {
-    if (selectedRecommendation?.id === recommendationId) {
-      setSelectedRecommendation(null);
-      return;
-    }
-
-    try {
-      setLoadingDetailKey(`recommendation:${recommendationId}`);
-      setErrorMessage(null);
-
-      const detail = await getMyRecommendation(recommendationId);
-      setSelectedRecommendation(detail);
-
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              recommendations: current.recommendations.map((recommendation) =>
-                recommendation.id === detail.id ? detail : recommendation
-              ),
-            }
-          : current
-      );
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load recommendation details."
-      );
-    } finally {
-      setLoadingDetailKey(null);
-    }
-  }
-
-  async function handleViewPlanChangeRequestDetail(requestId: string) {
-    if (selectedPlanChangeRequest?.id === requestId) {
-      setSelectedPlanChangeRequest(null);
-      return;
-    }
-
-    try {
-      setLoadingDetailKey(`request:${requestId}`);
-      setErrorMessage(null);
-
-      const detail = await getMyPlanChangeRequest(requestId);
-      setSelectedPlanChangeRequest(detail);
-
-      setData((current) =>
-        current
-          ? {
-              ...current,
-              planChangeRequests: current.planChangeRequests.map((request) =>
-                request.id === detail.id ? detail : request
-              ),
-            }
-          : current
-      );
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load plan-change request details."
-      );
-    } finally {
-      setLoadingDetailKey(null);
-    }
-  }
+  useEffect(() => {
+    setRecommendationPage(1);
+  }, [recommendationStatusFilter]);
 
   async function handleRequestPlanChange(recommendationId: string) {
     try {
@@ -419,7 +445,9 @@ export function InsightsScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} />
-        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>Loading insights...</Text>
+        <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+          Loading insights...
+        </Text>
       </View>
     );
   }
@@ -427,7 +455,10 @@ export function InsightsScreen() {
   return (
     <ScrollView
       style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={[
+        styles.container,
+        { backgroundColor: colors.background },
+      ]}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
@@ -437,13 +468,97 @@ export function InsightsScreen() {
       }
     >
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Insights</Text>
-      <Text style={[styles.title, { color: colors.text }]}>Predictions & recommendations</Text>
+      <Text style={[styles.title, { color: colors.text }]}>
+        Predictions & recommendations
+      </Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        See predicted usage, risk level, recommendations, and requests for the selected router.
+        Choose a month or day, then review only the matching insights.
       </Text>
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Selected Router</Text>
+      {errorMessage ? (
+        <View
+          style={[
+            styles.errorCard,
+            {
+              backgroundColor: colors.dangerBackground,
+              borderColor: colors.dangerBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>
+            Action failed
+          </Text>
+          <Text style={[styles.errorText, { color: colors.dangerText }]}>
+            {errorMessage}
+          </Text>
+          <Pressable
+            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+            onPress={() => void loadInsights(true)}
+          >
+            <Text style={[styles.primaryButtonText, { color: colors.buttonText }]}>
+              Refresh
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {successMessage ? (
+        <View
+          style={[
+            styles.successCard,
+            {
+              backgroundColor: colors.successBackground,
+              borderColor: colors.successBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.successTitle, { color: colors.successText }]}>
+            Request sent
+          </Text>
+          <Text style={[styles.successText, { color: colors.successText }]}>
+            {successMessage}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={styles.segmentRow}>
+        {(["monthly", "daily"] as InsightPeriodMode[]).map((option) => {
+          const active = periodMode === option;
+
+          return (
+            <Pressable
+              key={option}
+              style={[
+                styles.segmentButton,
+                {
+                  backgroundColor: active ? primaryActionBackground : colors.surface,
+                  borderColor: active ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setPeriodMode(option)}
+            >
+              <Text
+                style={[
+                  styles.segmentButtonText,
+                  { color: active ? primaryActionText : colors.textMuted },
+                ]}
+              >
+                {option === "monthly" ? "Monthly" : "Daily"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Selected Router
+        </Text>
         <Text style={[styles.itemTitle, { color: colors.text }]}>
           {getRouterDisplayName(selectedRouter)}
         </Text>
@@ -460,147 +575,153 @@ export function InsightsScreen() {
             {selectedSubscription?.plan.plan_name ?? "Unknown package"}
           </Text>
         </Text>
-        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Insights below are filtered to this router's independent service line.
-        </Text>
       </View>
 
-      {errorMessage ? (
-        <View style={[styles.errorCard, { backgroundColor: colors.dangerBackground, borderColor: colors.dangerBorder }]}>
-          <Text style={[styles.errorTitle, { color: colors.dangerText }]}>Action failed</Text>
-          <Text style={[styles.errorText, { color: colors.dangerText }]}>{errorMessage}</Text>
+      <View style={styles.periodRow}>
+        <Pressable
+          style={[
+            styles.periodButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          onPress={() => {
+            if (periodMode === "monthly") {
+              setMonthOffset((current) => current + 1);
+            } else {
+              setDayOffset((current) => current + 1);
+            }
+          }}
+        >
+          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
+            Previous {periodMode === "monthly" ? "month" : "day"}
+          </Text>
+        </Pressable>
+
+        <View style={styles.periodTitleWrap}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            {periodMode === "monthly" ? "Month" : "Day"}
+          </Text>
+          <Text style={[styles.periodTitle, { color: colors.text }]}>
+            {activeRange.label}
+          </Text>
         </View>
-      ) : null}
 
-      {successMessage ? (
-        <View style={[styles.successCard, { backgroundColor: colors.successBackground, borderColor: colors.successBorder }]}>
-          <Text style={[styles.successTitle, { color: colors.successText }]}>Request sent</Text>
-          <Text style={[styles.successText, { color: colors.successText }]}>{successMessage}</Text>
+        <Pressable
+          disabled={periodMode === "monthly" ? monthOffset === 0 : dayOffset === 0}
+          style={[
+            styles.periodButton,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity:
+                periodMode === "monthly"
+                  ? monthOffset === 0
+                    ? 0.45
+                    : 1
+                  : dayOffset === 0
+                    ? 0.45
+                    : 1,
+            },
+          ]}
+          onPress={() => {
+            if (periodMode === "monthly") {
+              setMonthOffset((current) => Math.max(current - 1, 0));
+            } else {
+              setDayOffset((current) => Math.max(current - 1, 0));
+            }
+          }}
+        >
+          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
+            Next {periodMode === "monthly" ? "month" : "day"}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.sectionHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+              Predictions
+            </Text>
+            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+              {periodPredictions.length} recent prediction(s) for {activeRange.label}
+            </Text>
+          </View>
         </View>
-      ) : null}
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Predictions</Text>
+        {periodPredictions.length ? (
+          <>
+            {paginatedPredictions.map((prediction) => (
+              <View
+                key={prediction.id}
+                style={[
+                  styles.itemRow,
+                  { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                ]}
+              >
+                <View style={styles.itemHeader}>
+                  <View style={styles.itemTitleGroup}>
+                    <Text style={[styles.itemTitle, { color: colors.text }]}>
+                      {formatGb(prediction.predicted_usage_gb)}
+                    </Text>
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                      {formatDate(prediction.period_start)} →{" "}
+                      {formatDate(prediction.period_end)}
+                    </Text>
+                  </View>
 
-        {selectedPredictions.length ? (
-          selectedPredictions.map((prediction) => (
-            <View key={prediction.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
-              <View style={styles.itemHeader}>
-                <View style={styles.itemTitleGroup}>
-                  <Text style={[styles.itemTitle, { color: colors.text }]}>
-                    {formatGb(prediction.predicted_usage_gb)}
-                  </Text>
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    {formatDate(prediction.period_start)} →{" "}
-                    {formatDate(prediction.period_end)}
+                  <Text style={[styles.pill, getRiskStyle(prediction.risk_level, colors)]}>
+                    {formatLabel(prediction.risk_level)}
                   </Text>
                 </View>
 
-                <Text style={[styles.pill, getRiskStyle(prediction.risk_level, colors)]}>
-                  {formatLabel(prediction.risk_level)}
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                  Confidence: {formatPercent(prediction.confidence_score)}
+                </Text>
+                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                  Model: {prediction.model_version ?? "Not specified"}
                 </Text>
               </View>
+            ))}
 
-              <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                Confidence: {formatPercent(prediction.confidence_score)}
-              </Text>
-              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                Model: {prediction.model_version ?? "Not specified"}
-              </Text>
-
-              {selectedPrediction?.id === prediction.id ? (
-                <View
-                  style={{
-                    borderRadius: 16,
-                    padding: 12,
-                    gap: 8,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.primary,
-                  }}
-                >
-                  <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-                    Prediction details
-                  </Text>
-                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Predicted usage:{" "}
-                    <Text style={{ color: colors.text, fontWeight: "900" }}>
-                      {formatGb(selectedPrediction.predicted_usage_gb)}
-                    </Text>
-                  </Text>
-                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Risk level:{" "}
-                    <Text style={{ color: colors.text, fontWeight: "900" }}>
-                      {formatLabel(selectedPrediction.risk_level)}
-                    </Text>
-                  </Text>
-                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Confidence:{" "}
-                    <Text style={{ color: colors.text, fontWeight: "900" }}>
-                      {formatPercent(selectedPrediction.confidence_score)}
-                    </Text>
-                  </Text>
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    Model: {selectedPrediction.model_version ?? "Not specified"}
-                  </Text>
-                </View>
-              ) : null}
-
-              <Pressable
-                disabled={loadingDetailKey === `prediction:${prediction.id}`}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor:
-                      selectedPrediction?.id === prediction.id
-                        ? primaryActionBackground
-                        : colors.surface,
-                    borderWidth: 1,
-                    borderColor:
-                      selectedPrediction?.id === prediction.id
-                        ? colors.primary
-                        : colors.border,
-                  },
-                  loadingDetailKey === `prediction:${prediction.id}` &&
-                    styles.primaryButtonDisabled,
-                ]}
-                onPress={() => void handleViewPredictionDetail(prediction.id)}
-              >
-                <Text
-                  style={[
-                    styles.primaryButtonText,
-                    {
-                      color:
-                        selectedPrediction?.id === prediction.id
-                          ? primaryActionText
-                          : colors.text,
-                    },
-                  ]}
-                >
-                  {loadingDetailKey === `prediction:${prediction.id}`
-                    ? "Loading..."
-                    : selectedPrediction?.id === prediction.id
-                      ? "Hide details"
-                      : "View details"}
-                </Text>
-              </Pressable>
-            </View>
-          ))
+            <PageControls
+              page={safePredictionPage}
+              pageCount={predictionPageCount}
+              onPageChange={setPredictionPage}
+              colors={colors}
+              primaryActionBackground={primaryActionBackground}
+              primaryActionText={primaryActionText}
+            />
+          </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No predictions found yet. Run intelligence generation from the ISP
-            Admin dashboard to create demo predictions.
+            No recent predictions found for this {periodMode === "monthly" ? "month" : "day"}.
           </Text>
         )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Recommendations</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Recommendations
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          {filteredRecommendations.length} recent recommendation(s) for{" "}
+          {activeRange.label}
+        </Text>
 
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <View style={styles.filterRow}>
           {(
             [
-              { key: "all", label: `All (${selectedRecommendations.length})` },
+              { key: "all", label: `All (${periodRecommendations.length})` },
               { key: "pending", label: "Pending" },
               { key: "accepted", label: "Accepted" },
               { key: "rejected", label: "Rejected" },
@@ -611,24 +732,22 @@ export function InsightsScreen() {
             return (
               <Pressable
                 key={option.key}
-                style={{
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active
-                    ? primaryActionBackground
-                    : colors.surfaceMuted,
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                }}
+                style={[
+                  styles.filterButton,
+                  {
+                    backgroundColor: active
+                      ? primaryActionBackground
+                      : colors.surfaceMuted,
+                    borderColor: active ? colors.primary : colors.border,
+                  },
+                ]}
                 onPress={() => setRecommendationStatusFilter(option.key)}
               >
                 <Text
-                  style={{
-                    color: active ? primaryActionText : colors.textMuted,
-                    fontSize: 12,
-                    fontWeight: "900",
-                  }}
+                  style={[
+                    styles.filterText,
+                    { color: active ? primaryActionText : colors.textMuted },
+                  ]}
                 >
                   {option.label}
                 </Text>
@@ -638,314 +757,244 @@ export function InsightsScreen() {
         </View>
 
         {filteredRecommendations.length ? (
-          filteredRecommendations.map((recommendation) => {
-            const isCreating = creatingRequestId === recommendation.id;
-            const canRequest = canRequestPlanChange(recommendation);
+          <>
+            {paginatedRecommendations.map((recommendation) => {
+              const isCreating = creatingRequestId === recommendation.id;
+              const canRequest = canRequestPlanChange(recommendation);
 
-            return (
-              <View key={recommendation.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
-                <View style={styles.itemHeader}>
-                  <View style={styles.itemTitleGroup}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>
-                      {formatLabel(recommendation.recommendation_type)}
-                    </Text>
-                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                      {formatDate(recommendation.created_at)}
-                    </Text>
-                  </View>
-
-                  <Text style={[styles.statusPill, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.primary }]}>
-                    {formatLabel(recommendation.status)}
-                  </Text>
-                </View>
-
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                  {recommendation.recommendation_text}
-                </Text>
-
-                {recommendation.reason ? (
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>Reason: {recommendation.reason}</Text>
-                ) : null}
-
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  Confidence: {formatPercent(recommendation.confidence_score)}
-                </Text>
-
-                {selectedRecommendation?.id === recommendation.id ? (
-                  <View
-                    style={{
-                      borderRadius: 16,
-                      padding: 12,
-                      gap: 8,
-                      backgroundColor: colors.surface,
-                      borderWidth: 1,
-                      borderColor: colors.primary,
-                    }}
-                  >
-                    <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-                      Recommendation details
-                    </Text>
-                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                      Type:{" "}
-                      <Text style={{ color: colors.text, fontWeight: "900" }}>
-                        {formatLabel(selectedRecommendation.recommendation_type)}
-                      </Text>
-                    </Text>
-                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                      Status:{" "}
-                      <Text style={{ color: colors.text, fontWeight: "900" }}>
-                        {formatLabel(selectedRecommendation.status)}
-                      </Text>
-                    </Text>
-                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                      Confidence:{" "}
-                      <Text style={{ color: colors.text, fontWeight: "900" }}>
-                        {formatPercent(selectedRecommendation.confidence_score)}
-                      </Text>
-                    </Text>
-                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                      Plan ID: {selectedRecommendation.recommendation_plan_id ?? "none"}
-                    </Text>
-                  </View>
-                ) : null}
-
-                <Pressable
-                  disabled={
-                    loadingDetailKey === `recommendation:${recommendation.id}`
-                  }
+              return (
+                <View
+                  key={recommendation.id}
                   style={[
-                    styles.primaryButton,
-                    {
-                      backgroundColor:
-                        selectedRecommendation?.id === recommendation.id
-                          ? primaryActionBackground
-                          : colors.surface,
-                      borderWidth: 1,
-                      borderColor:
-                        selectedRecommendation?.id === recommendation.id
-                          ? colors.primary
-                          : colors.border,
-                    },
-                    loadingDetailKey === `recommendation:${recommendation.id}` &&
-                      styles.primaryButtonDisabled,
+                    styles.itemRow,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
                   ]}
-                  onPress={() =>
-                    void handleViewRecommendationDetail(recommendation.id)
-                  }
                 >
-                  <Text
-                    style={[
-                      styles.primaryButtonText,
-                      {
-                        color:
-                          selectedRecommendation?.id === recommendation.id
-                            ? primaryActionText
-                            : colors.text,
-                      },
-                    ]}
-                  >
-                    {loadingDetailKey === `recommendation:${recommendation.id}`
-                      ? "Loading..."
-                      : selectedRecommendation?.id === recommendation.id
-                        ? "Hide details"
-                        : "View details"}
-                  </Text>
-                </Pressable>
+                  <View style={styles.itemHeader}>
+                    <View style={styles.itemTitleGroup}>
+                      <Text style={[styles.itemTitle, { color: colors.text }]}>
+                        {formatLabel(recommendation.recommendation_type)}
+                      </Text>
+                      <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                        {formatDate(recommendation.created_at)}
+                      </Text>
+                    </View>
 
-                {canRequest ? (
-                  <Pressable
-                    disabled={isCreating}
-                    style={[
-                      styles.primaryButton,
-                      {
-                        backgroundColor: primaryActionBackground,
-                        borderColor: colors.primary,
-                      },
-                      isCreating && styles.primaryButtonDisabled,
-                    ]}
-                    onPress={() => void handleRequestPlanChange(recommendation.id)}
-                  >
                     <Text
                       style={[
-                        styles.primaryButtonText,
-                        { color: primaryActionText },
+                        styles.statusPill,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          color: colors.primary,
+                        },
                       ]}
                     >
-                      {isCreating ? "Sending..." : "Request for selected router"}
+                      {formatLabel(recommendation.status)}
                     </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            );
-          })
+                  </View>
+
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                    {recommendation.recommendation_text}
+                  </Text>
+
+                  {recommendation.reason ? (
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                      Reason: {recommendation.reason}
+                    </Text>
+                  ) : null}
+
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                    Confidence: {formatPercent(recommendation.confidence_score)}
+                  </Text>
+
+                  {canRequest ? (
+                    <Pressable
+                      disabled={isCreating}
+                      style={[
+                        styles.primaryButton,
+                        {
+                          backgroundColor: primaryActionBackground,
+                          borderColor: colors.primary,
+                        },
+                        isCreating && styles.primaryButtonDisabled,
+                      ]}
+                      onPress={() => void handleRequestPlanChange(recommendation.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.primaryButtonText,
+                          { color: primaryActionText },
+                        ]}
+                      >
+                        {isCreating ? "Sending..." : "Request for selected router"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+
+            <PageControls
+              page={safeRecommendationPage}
+              pageCount={recommendationPageCount}
+              onPageChange={setRecommendationPage}
+              colors={colors}
+              primaryActionBackground={primaryActionBackground}
+              primaryActionText={primaryActionText}
+            />
+          </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No recommendations match this filter yet. Recommendations will appear after
-            predictions are generated.
+            No recent recommendations match this period and filter.
           </Text>
         )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>Plan Change Requests</Text>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Recent Requests
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Plan change requests stay visible here for context.
+        </Text>
 
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          {(
-            [
-              { key: "all", label: `All (${selectedPlanChangeRequests.length})` },
-              { key: "pending", label: "Pending" },
-              { key: "approved", label: "Approved" },
-              { key: "rejected", label: "Rejected" },
-            ] as Array<{ key: PlanRequestStatusFilter; label: string }>
-          ).map((option) => {
-            const active = planRequestStatusFilter === option.key;
-
-            return (
-              <Pressable
-                key={option.key}
-                style={{
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: active ? colors.primary : colors.border,
-                  backgroundColor: active
-                    ? primaryActionBackground
-                    : colors.surfaceMuted,
-                  paddingHorizontal: 12,
-                  paddingVertical: 7,
-                }}
-                onPress={() => setPlanRequestStatusFilter(option.key)}
-              >
-                <Text
-                  style={{
-                    color: active ? primaryActionText : colors.textMuted,
-                    fontSize: 12,
-                    fontWeight: "900",
-                  }}
-                >
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {filteredPlanChangeRequests.length ? (
-          filteredPlanChangeRequests.map((request) => (
-            <View key={request.id} style={[styles.itemRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, borderTopColor: colors.border, borderTopWidth: 0, borderWidth: 1, borderRadius: 18, padding: 14, marginTop: 10 }]}>
+        {selectedPlanChangeRequests.slice(0, 3).length ? (
+          selectedPlanChangeRequests.slice(0, 3).map((request) => (
+            <View
+              key={request.id}
+              style={[
+                styles.itemRow,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+              ]}
+            >
               <View style={styles.itemHeader}>
-                <View style={styles.itemTitleGroup}>
-                  <Text style={[styles.itemTitle, { color: colors.text }]}>
-                    {formatLabel(request.request_type)}
-                  </Text>
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    Requested: {formatDateTime(request.requested_at)}
-                  </Text>
-                </View>
-
-                <Text style={[styles.statusPill, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.primary }]}>
-                  {formatLabel(request.status)}
+                <Text style={[styles.itemTitle, { color: colors.text }]}>
+                  {formatLabel(request.request_type)}
                 </Text>
-              </View>
-
-              {request.reason ? (
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>{request.reason}</Text>
-              ) : null}
-
-              {request.admin_response ? (
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  ISP response: {request.admin_response}
-                </Text>
-              ) : (
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  Waiting for ISP admin review.
-                </Text>
-              )}
-
-              {selectedPlanChangeRequest?.id === request.id ? (
-                <View
-                  style={{
-                    borderRadius: 16,
-                    padding: 12,
-                    gap: 8,
-                    backgroundColor: colors.surface,
-                    borderWidth: 1,
-                    borderColor: colors.primary,
-                  }}
-                >
-                  <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-                    Request details
-                  </Text>
-                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Type:{" "}
-                    <Text style={{ color: colors.text, fontWeight: "900" }}>
-                      {formatLabel(selectedPlanChangeRequest.request_type)}
-                    </Text>
-                  </Text>
-                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Status:{" "}
-                    <Text style={{ color: colors.text, fontWeight: "900" }}>
-                      {formatLabel(selectedPlanChangeRequest.status)}
-                    </Text>
-                  </Text>
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    Requested: {formatDateTime(selectedPlanChangeRequest.requested_at)}
-                  </Text>
-                  {selectedPlanChangeRequest.reviewed_at ? (
-                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                      Reviewed: {formatDateTime(selectedPlanChangeRequest.reviewed_at)}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-
-              <Pressable
-                disabled={loadingDetailKey === `request:${request.id}`}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor:
-                      selectedPlanChangeRequest?.id === request.id
-                        ? primaryActionBackground
-                        : colors.surface,
-                    borderWidth: 1,
-                    borderColor:
-                      selectedPlanChangeRequest?.id === request.id
-                        ? colors.primary
-                        : colors.border,
-                  },
-                  loadingDetailKey === `request:${request.id}` &&
-                    styles.primaryButtonDisabled,
-                ]}
-                onPress={() => void handleViewPlanChangeRequestDetail(request.id)}
-              >
                 <Text
                   style={[
-                    styles.primaryButtonText,
+                    styles.statusPill,
                     {
-                      color:
-                        selectedPlanChangeRequest?.id === request.id
-                          ? primaryActionText
-                          : colors.text,
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      color: colors.primary,
                     },
                   ]}
                 >
-                  {loadingDetailKey === `request:${request.id}`
-                    ? "Loading..."
-                    : selectedPlanChangeRequest?.id === request.id
-                      ? "Hide details"
-                      : "View details"}
+                  {formatLabel(request.status)}
                 </Text>
-              </Pressable>
+              </View>
+              <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                Requested: {formatDateTime(request.requested_at)}
+              </Text>
+              {request.admin_response ? (
+                <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                  Admin response: {request.admin_response}
+                </Text>
+              ) : null}
             </View>
           ))
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No plan change requests match this filter yet. You can create one from an eligible
-            recommendation.
+            No plan change requests yet.
           </Text>
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function PageControls({
+  page,
+  pageCount,
+  onPageChange,
+  colors,
+  primaryActionBackground,
+  primaryActionText,
+}: {
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+  colors: ReturnType<typeof usePulseFiTheme>["colors"];
+  primaryActionBackground: string;
+  primaryActionText: string;
+}) {
+  const visiblePages = Array.from(
+    { length: Math.min(QUICK_PAGE_COUNT, pageCount) },
+    (_, index) => index + 1
+  );
+
+  return (
+    <View style={styles.pageRow}>
+      <Pressable
+        disabled={page <= 1}
+        style={[
+          styles.pageButton,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            opacity: page <= 1 ? 0.45 : 1,
+          },
+        ]}
+        onPress={() => onPageChange(Math.max(page - 1, 1))}
+      >
+        <Text style={[styles.pageButtonText, { color: colors.primary }]}>
+          Previous
+        </Text>
+      </Pressable>
+
+      {visiblePages.map((pageNumber) => {
+        const active = pageNumber === page;
+
+        return (
+          <Pressable
+            key={pageNumber}
+            style={[
+              styles.pageNumberButton,
+              {
+                backgroundColor: active
+                  ? primaryActionBackground
+                  : colors.surfaceMuted,
+                borderColor: active ? colors.primary : colors.border,
+              },
+            ]}
+            onPress={() => onPageChange(pageNumber)}
+          >
+            <Text
+              style={[
+                styles.pageButtonText,
+                { color: active ? primaryActionText : colors.textMuted },
+              ]}
+            >
+              {pageNumber}
+            </Text>
+          </Pressable>
+        );
+      })}
+
+      <Pressable
+        disabled={page >= pageCount}
+        style={[
+          styles.pageButton,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            opacity: page >= pageCount ? 0.45 : 1,
+          },
+        ]}
+        onPress={() => onPageChange(Math.min(page + 1, pageCount))}
+      >
+        <Text style={[styles.pageButtonText, { color: colors.primary }]}>
+          Next
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -958,94 +1007,125 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 12,
     padding: 24,
-    backgroundColor: "#F6F8FB",
   },
   container: {
     flexGrow: 1,
     gap: 16,
     padding: 20,
-    backgroundColor: "#F6F8FB",
   },
   eyebrow: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#00A7D8",
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   title: {
     fontSize: 28,
     fontWeight: "900",
-    color: "#102033",
   },
   subtitle: {
     fontSize: 15,
     lineHeight: 22,
-    color: "#5D6B7A",
   },
   card: {
     borderRadius: 22,
     padding: 18,
     gap: 12,
-    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E3EAF2",
-  },
-  errorCard: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 6,
-    backgroundColor: "#FFF3F0",
-    borderWidth: 1,
-    borderColor: "#FFD1C7",
-  },
-  errorTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#8A2E1B",
-  },
-  errorText: {
-    fontSize: 14,
-    color: "#8A2E1B",
-  },
-  successCard: {
-    borderRadius: 18,
-    padding: 16,
-    gap: 6,
-    backgroundColor: "#E9F8EF",
-    borderWidth: 1,
-    borderColor: "#BFECCF",
-  },
-  successTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#0B6B3A",
-  },
-  successText: {
-    fontSize: 14,
-    color: "#0B6B3A",
   },
   cardLabel: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#617083",
     textTransform: "uppercase",
     letterSpacing: 0.6,
   },
   cardText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  smallText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  mutedText: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  segmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  segmentButton: {
+    flex: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  segmentButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  periodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  periodTitleWrap: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  periodTitle: {
     fontSize: 15,
-    lineHeight: 22,
-    color: "#33465B",
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  periodButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  periodButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  filterText: {
+    fontSize: 12,
+    fontWeight: "900",
   },
   itemRow: {
-    borderTopWidth: 1,
-    borderTopColor: "#E3EAF2",
-    paddingTop: 14,
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    marginTop: 10,
     gap: 8,
   },
   itemHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
   },
@@ -1054,72 +1134,96 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   itemTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "900",
-    color: "#102033",
-    textTransform: "capitalize",
   },
   pill: {
+    alignSelf: "flex-start",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     fontSize: 12,
     fontWeight: "900",
     overflow: "hidden",
     textTransform: "capitalize",
   },
-  highRisk: {
-    color: "#8A2E1B",
-    backgroundColor: "#FFF3F0",
-  },
-  mediumRisk: {
-    color: "#8A5B00",
-    backgroundColor: "#FFF5D7",
-  },
-  lowRisk: {
-    color: "#0B6B3A",
-    backgroundColor: "#E9F8EF",
-  },
   statusPill: {
+    alignSelf: "flex-start",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     fontSize: 12,
     fontWeight: "900",
-    color: "#0B5D7A",
-    backgroundColor: "#EAF9FE",
     overflow: "hidden",
     textTransform: "capitalize",
   },
   primaryButton: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
-    borderRadius: 14,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#00A7D8",
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    backgroundColor: "#EAF9FE",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   primaryButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.65,
   },
   primaryButtonText: {
-    color: "#0B5D7A",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
-    textAlign: "center",
   },
-  mutedText: {
+  errorCard: {
+    borderRadius: 18,
+    padding: 16,
+    gap: 6,
+    borderWidth: 1,
+  },
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  errorText: {
     fontSize: 14,
-    color: "#6B7888",
-    textAlign: "center",
   },
-  smallText: {
-    fontSize: 12,
-    color: "#6B7888",
+  successCard: {
+    borderRadius: 18,
+    padding: 16,
+    gap: 6,
+    borderWidth: 1,
+  },
+  successTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  successText: {
+    fontSize: 14,
+  },
+  pageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  pageButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  pageNumberButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minWidth: 42,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pageButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
   },
 });
