@@ -9,7 +9,6 @@ import {
   Text,
   View,
 } from "react-native";
-
 import Svg, { Circle } from "react-native-svg";
 
 import {
@@ -20,8 +19,8 @@ import {
   getMyUsageRecords,
   getMyUsageSummary,
 } from "../api/appUser";
-import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
+import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import type {
   DecimalLike,
   MyDailyUsage,
@@ -32,28 +31,21 @@ import type {
   MyUsageSummary,
 } from "../types/appUser";
 
+type UsageMode = "monthly" | "daily";
+type UsageSourceFilter = "all" | "official" | "estimated";
+type UsageBreakdownMode = "download" | "upload";
+
 type UsageData = {
   officialSummary: MyUsageSummary | null;
   estimatedSummary: MyUsageSummary | null;
-  dailyUsage: MyDailyUsage[];
+  dailyRows: MyDailyUsage[];
   records: MyUsageRecord[];
   deviceUsage: MyDeviceUsage[];
   routers: MyRouter[];
   subscriptions: MySubscription[];
 };
 
-type UsageFilter = "all" | "official" | "estimated";
-type UsageBreakdownMode = "download" | "upload";
-type SourceKind = "official" | "estimated";
-
-const PAGE_SIZE = 5;
-const QUICK_PAGE_COUNT = 3;
-
-const usageFilters: { key: UsageFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "official", label: "Official" },
-  { key: "estimated", label: "Estimated" },
-];
+const RECORD_PAGE_SIZE = 5;
 
 function toNumber(value: DecimalLike | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -70,17 +62,19 @@ function formatMb(value: DecimalLike | number) {
   return `${mb.toFixed(0)} MB`;
 }
 
-function formatDailyLabel(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(undefined, {
+function formatDate(value: Date) {
+  return value.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatMonth(value: Date) {
+  return value.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
   });
 }
 
@@ -88,25 +82,46 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
-function formatMonthTitle(monthOffset: number) {
+function getMonthDate(monthOffset: number) {
   const now = new Date();
-  const monthDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+  return new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+}
 
-  return monthDate.toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
-  });
+function getDayDate(dayOffset: number) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
 }
 
 function getMonthRange(monthOffset: number) {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
-  const end = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
+  const month = getMonthDate(monthOffset);
+  const start = new Date(month.getFullYear(), month.getMonth(), 1);
+  const end = new Date(month.getFullYear(), month.getMonth() + 1, 1);
 
   return {
     startAt: start.toISOString(),
     endAt: end.toISOString(),
+    label: formatMonth(start),
   };
+}
+
+function getDayRange(dayOffset: number) {
+  const day = getDayDate(dayOffset);
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+
+  return {
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+    label: formatDate(start),
+  };
+}
+
+function getRouterDisplayName(router: MyRouter | null) {
+  return router?.router_name ?? router?.router_model ?? "No router selected";
+}
+
+function getUsageRecordKind(record: MyUsageRecord): Exclude<UsageSourceFilter, "all"> {
+  return record.device_id ? "estimated" : "official";
 }
 
 function formatSource(value: string | null) {
@@ -117,40 +132,6 @@ function formatSource(value: string | null) {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function getUsageRecordKind(record: MyUsageRecord): Exclude<UsageFilter, "all"> {
-  return record.device_id ? "estimated" : "official";
-}
-
-function getUsageKindLabel(kind: Exclude<UsageFilter, "all">) {
-  if (kind === "official") {
-    return "Official service total";
-  }
-
-  return "Estimated device usage";
-}
-
-function getUsageKindHelp(kind: Exclude<UsageFilter, "all">) {
-  if (kind === "official") {
-    return "This is the service-line total used for package-limit explanation.";
-  }
-
-  return "This is router/CPE per-device usage and may be approximate.";
-}
-
-function getDeviceDisplayName(device: MyDeviceUsage) {
-  return device.device_name ?? device.mac_address ?? "Unknown device";
-}
-
-function getDeviceUsageValue(device: MyDeviceUsage, mode: UsageBreakdownMode) {
-  return mode === "download"
-    ? toNumber(device.usage.download_mb)
-    : toNumber(device.usage.upload_mb);
-}
-
-function getRouterDisplayName(router: MyRouter | null) {
-  return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
 function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
@@ -173,6 +154,16 @@ function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
   };
 }
 
+function getDeviceDisplayName(device: MyDeviceUsage) {
+  return device.device_name ?? device.mac_address ?? "Unknown device";
+}
+
+function getDeviceUsageValue(device: MyDeviceUsage, mode: UsageBreakdownMode) {
+  return mode === "download"
+    ? toNumber(device.usage.download_mb)
+    : toNumber(device.usage.upload_mb);
+}
+
 function CircularUsageGraph({
   usedMb,
   limitGb,
@@ -181,8 +172,8 @@ function CircularUsageGraph({
   limitGb: number | null;
 }) {
   const { colors } = usePulseFiTheme();
-  const size = 168;
-  const strokeWidth = 16;
+  const size = 156;
+  const strokeWidth = 15;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const limitMb = limitGb && limitGb > 0 ? limitGb * 1024 : null;
@@ -234,15 +225,22 @@ export function UsageScreen() {
   const primaryActionBackground =
     colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE";
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
+
   const [data, setData] = useState<UsageData | null>(null);
-  const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
-  const [recordPage, setRecordPage] = useState(1);
+  const [mode, setMode] = useState<UsageMode>("monthly");
   const [monthOffset, setMonthOffset] = useState(0);
+  const [dayOffset, setDayOffset] = useState(0);
+  const [sourceFilter, setSourceFilter] = useState<UsageSourceFilter>("all");
+  const [recordPage, setRecordPage] = useState(1);
   const [breakdownMode, setBreakdownMode] =
     useState<UsageBreakdownMode>("download");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const activeRange = useMemo(() => {
+    return mode === "monthly" ? getMonthRange(monthOffset) : getDayRange(dayOffset);
+  }, [dayOffset, mode, monthOffset]);
 
   const loadUsage = useCallback(async (refreshing = false) => {
     try {
@@ -274,56 +272,60 @@ export function UsageScreen() {
         setSelectedRouterId(effectiveRouterId);
       }
 
-      const range = getMonthRange(monthOffset);
-      const sourceKind: SourceKind | null =
-        usageFilter === "all" ? null : usageFilter;
-      const offset = (recordPage - 1) * PAGE_SIZE;
+      const sourceKind = sourceFilter === "all" ? null : sourceFilter;
+      const offset = (recordPage - 1) * RECORD_PAGE_SIZE;
 
       const [
         officialSummary,
         estimatedSummary,
-        officialDailyUsage,
-        estimatedDailyUsage,
+        officialDailyRows,
+        estimatedDailyRows,
         records,
         deviceUsage,
       ] = await Promise.all([
         effectiveRouterId
           ? getMyUsageSummary(effectiveRouterId, {
-              ...range,
+              startAt: activeRange.startAt,
+              endAt: activeRange.endAt,
               sourceKind: "official",
             })
           : null,
         effectiveRouterId
           ? getMyUsageSummary(effectiveRouterId, {
-              ...range,
+              startAt: activeRange.startAt,
+              endAt: activeRange.endAt,
               sourceKind: "estimated",
             })
           : null,
-        getMyDailyUsage(31, effectiveRouterId, {
-          ...range,
+        getMyDailyUsage(mode === "monthly" ? 31 : 1, effectiveRouterId, {
+          startAt: activeRange.startAt,
+          endAt: activeRange.endAt,
           sourceKind: "official",
         }),
-        getMyDailyUsage(31, effectiveRouterId, {
-          ...range,
+        getMyDailyUsage(mode === "monthly" ? 31 : 1, effectiveRouterId, {
+          startAt: activeRange.startAt,
+          endAt: activeRange.endAt,
           sourceKind: "estimated",
         }),
-        getMyUsageRecords(PAGE_SIZE, effectiveRouterId, {
+        getMyUsageRecords(RECORD_PAGE_SIZE, effectiveRouterId, {
           offset,
-          ...range,
+          startAt: activeRange.startAt,
+          endAt: activeRange.endAt,
           sourceKind,
         }),
-        getMyDeviceUsageList(50, effectiveRouterId, range),
+        getMyDeviceUsageList(50, effectiveRouterId, {
+          startAt: activeRange.startAt,
+          endAt: activeRange.endAt,
+        }),
       ]);
 
       const officialTotals = normalizeUsageSummary(officialSummary);
-      const dailyUsage = officialTotals.record_count > 0
-        ? officialDailyUsage
-        : estimatedDailyUsage;
 
       setData({
         officialSummary,
         estimatedSummary,
-        dailyUsage,
+        dailyRows:
+          officialTotals.record_count > 0 ? officialDailyRows : estimatedDailyRows,
         records,
         deviceUsage,
         routers,
@@ -331,20 +333,20 @@ export function UsageScreen() {
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load usage data."
+        error instanceof Error ? error.message : "Could not load usage data."
       );
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   }, [
-    monthOffset,
+    activeRange.endAt,
+    activeRange.startAt,
+    mode,
     recordPage,
     selectedRouterId,
     setSelectedRouterId,
-    usageFilter,
+    sourceFilter,
   ]);
 
   useFocusEffect(
@@ -402,10 +404,6 @@ export function UsageScreen() {
     );
   }, [data?.subscriptions, selectedRouter]);
 
-  const selectedPlanLimitGb = selectedSubscription
-    ? toNumber(selectedSubscription.plan.data_limit_gb)
-    : null;
-
   const officialTotals = useMemo(
     () => normalizeUsageSummary(data?.officialSummary),
     [data?.officialSummary]
@@ -418,8 +416,10 @@ export function UsageScreen() {
 
   const planTotals =
     officialTotals.record_count > 0 ? officialTotals : estimatedTotals;
-  const dailySourceLabel =
-    officialTotals.record_count > 0 ? "Official" : "Estimated";
+
+  const selectedPlanLimitGb = selectedSubscription
+    ? toNumber(selectedSubscription.plan.data_limit_gb)
+    : null;
 
   const selectedDeviceUsage = useMemo(() => {
     const list = selectedRouter
@@ -440,24 +440,21 @@ export function UsageScreen() {
     0
   );
 
-  const dailyUsageRows = useMemo(() => {
-    return [...(data?.dailyUsage ?? [])].sort((left, right) =>
-      right.usage_date.localeCompare(left.usage_date)
-    );
-  }, [data?.dailyUsage]);
+  const dailyRows = [...(data?.dailyRows ?? [])].sort((left, right) =>
+    right.usage_date.localeCompare(left.usage_date)
+  );
 
-  const maxDailyUsageMb = dailyUsageRows.reduce(
+  const maxDailyUsageMb = dailyRows.reduce(
     (max, day) => Math.max(max, toNumber(day.totals.total_mb)),
     0
   );
 
-  const records = data?.records ?? [];
-  const hasPreviousPage = recordPage > 1;
-  const hasNextPage = records.length === PAGE_SIZE;
+  const hasPreviousRecordPage = recordPage > 1;
+  const hasNextRecordPage = (data?.records.length ?? 0) === RECORD_PAGE_SIZE;
 
   useEffect(() => {
     setRecordPage(1);
-  }, [selectedRouterId, usageFilter, monthOffset]);
+  }, [dayOffset, mode, monthOffset, selectedRouterId, sourceFilter]);
 
   if (isLoading && !data) {
     return (
@@ -488,7 +485,7 @@ export function UsageScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Usage</Text>
       <Text style={[styles.title, { color: colors.text }]}>Usage history</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Track monthly usage for the selected router/service line.
+        Switch between monthly totals and a single-day breakdown.
       </Text>
 
       {errorMessage ? (
@@ -518,6 +515,35 @@ export function UsageScreen() {
         </View>
       ) : null}
 
+      <View style={styles.segmentRow}>
+        {(["monthly", "daily"] as UsageMode[]).map((option) => {
+          const active = mode === option;
+
+          return (
+            <Pressable
+              key={option}
+              style={[
+                styles.segmentButton,
+                {
+                  backgroundColor: active ? primaryActionBackground : colors.surface,
+                  borderColor: active ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setMode(option)}
+            >
+              <Text
+                style={[
+                  styles.segmentButtonText,
+                  { color: active ? primaryActionText : colors.textMuted },
+                ]}
+              >
+                {option === "monthly" ? "Monthly" : "Daily"}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <View
         style={[
           styles.card,
@@ -545,63 +571,63 @@ export function UsageScreen() {
         </Text>
       </View>
 
-      <View style={styles.monthRow}>
+      <View style={styles.periodRow}>
         <Pressable
           style={[
-            styles.monthButton,
+            styles.periodButton,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
-          onPress={() => setMonthOffset((current) => current + 1)}
+          onPress={() => {
+            if (mode === "monthly") {
+              setMonthOffset((current) => current + 1);
+            } else {
+              setDayOffset((current) => current + 1);
+            }
+          }}
         >
-          <Text style={[styles.monthButtonText, { color: colors.primary }]}>
-            Previous month
+          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
+            Previous {mode === "monthly" ? "month" : "day"}
           </Text>
         </Pressable>
 
-        <View style={styles.monthTitleWrap}>
+        <View style={styles.periodTitleWrap}>
           <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            Month
+            {mode === "monthly" ? "Month" : "Day"}
           </Text>
-          <Text style={[styles.monthTitle, { color: colors.text }]}>
-            {formatMonthTitle(monthOffset)}
+          <Text style={[styles.periodTitle, { color: colors.text }]}>
+            {activeRange.label}
           </Text>
         </View>
 
         <Pressable
-          disabled={monthOffset === 0}
+          disabled={mode === "monthly" ? monthOffset === 0 : dayOffset === 0}
           style={[
-            styles.monthButton,
+            styles.periodButton,
             {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              opacity: monthOffset === 0 ? 0.45 : 1,
+              opacity:
+                mode === "monthly"
+                  ? monthOffset === 0
+                    ? 0.45
+                    : 1
+                  : dayOffset === 0
+                    ? 0.45
+                    : 1,
             },
           ]}
-          onPress={() => setMonthOffset((current) => Math.max(current - 1, 0))}
+          onPress={() => {
+            if (mode === "monthly") {
+              setMonthOffset((current) => Math.max(current - 1, 0));
+            } else {
+              setDayOffset((current) => Math.max(current - 1, 0));
+            }
+          }}
         >
-          <Text style={[styles.monthButtonText, { color: colors.primary }]}>
-            Next month
+          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
+            Next {mode === "monthly" ? "month" : "day"}
           </Text>
         </Pressable>
-      </View>
-
-      <View
-        style={[
-          styles.infoCard,
-          {
-            backgroundColor: colors.surfaceMuted,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.infoTitle, { color: colors.text }]}>
-          Usage source guide
-        </Text>
-        <Text style={[styles.infoText, { color: colors.textMuted }]}>
-          Official usage is the service-line total used against the package
-          limit. Estimated usage is the router/CPE per-device breakdown and may
-          be approximate.
-        </Text>
       </View>
 
       <View
@@ -611,8 +637,9 @@ export function UsageScreen() {
         ]}
       >
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Package Usage Summary
+          {mode === "monthly" ? "Monthly Usage" : "Daily Usage"}
         </Text>
+
         <CircularUsageGraph
           usedMb={planTotals.total_mb}
           limitGb={selectedPlanLimitGb}
@@ -636,13 +663,13 @@ export function UsageScreen() {
             ]}
           >
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-              Official total
+              Official
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
               {formatMb(officialTotals.total_mb)}
             </Text>
             <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
-              Plan-limit source
+              Package source
             </Text>
           </View>
 
@@ -653,7 +680,7 @@ export function UsageScreen() {
             ]}
           >
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
-              Estimated total
+              Estimated
             </Text>
             <Text style={[styles.metricValue, { color: colors.text }]}>
               {formatMb(estimatedTotals.total_mb)}
@@ -665,10 +692,84 @@ export function UsageScreen() {
         </View>
 
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          If official rows exist, PulseFi uses official usage for package-limit
-          explanation. Estimated totals stay visible for device-level debugging.
+          Official usage is used for package-limit explanation. Estimated usage
+          explains per-device router/CPE breakdown.
         </Text>
       </View>
+
+      {mode === "monthly" ? (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            Daily Breakdown
+          </Text>
+          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+            Daily rows for {activeRange.label}.
+          </Text>
+
+          {dailyRows.length ? (
+            dailyRows.map((day) => {
+              const totalMb = toNumber(day.totals.total_mb);
+              const percent =
+                maxDailyUsageMb > 0
+                  ? Math.min((totalMb / maxDailyUsageMb) * 100, 100)
+                  : 0;
+
+              return (
+                <View
+                  key={day.usage_date}
+                  style={[
+                    styles.dailyRow,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.dailyHeader}>
+                    <Text style={[styles.dailyDate, { color: colors.text }]}>
+                      {day.usage_date}
+                    </Text>
+                    <Text style={[styles.dailyTotal, { color: colors.text }]}>
+                      {formatMb(day.totals.total_mb)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.dailyBarTrack,
+                      { backgroundColor: colors.border },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dailyBarFill,
+                        {
+                          backgroundColor: colors.primary,
+                          width: `${percent}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                    Download {formatMb(day.totals.download_mb)} · Upload{" "}
+                    {formatMb(day.totals.upload_mb)}
+                  </Text>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+              No daily usage is available for this month.
+            </Text>
+          )}
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -676,77 +777,42 @@ export function UsageScreen() {
           { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
-        <View style={styles.recordHeader}>
-          <View style={styles.deviceUsageTitleGroup}>
-            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-              {breakdownMode === "download"
-                ? "Download by device"
-                : "Upload by device"}
-            </Text>
-            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              Estimated router/CPE device totals for {formatMonthTitle(monthOffset)}.
-            </Text>
-          </View>
-        </View>
+        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+          Usage Per Device
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Device totals for {activeRange.label}.
+        </Text>
 
-        <View style={styles.metricRow}>
-          <Pressable
-            onPress={() => setBreakdownMode("download")}
-            style={[
-              styles.metricBox,
-              {
-                backgroundColor:
-                  breakdownMode === "download"
-                    ? primaryActionBackground
-                    : colors.surfaceMuted,
-                borderColor:
-                  breakdownMode === "download" ? colors.primary : colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.metricLabel,
-                {
-                  color:
-                    breakdownMode === "download"
-                      ? primaryActionText
-                      : colors.textMuted,
-                },
-              ]}
-            >
-              Download
-            </Text>
-          </Pressable>
+        <View style={styles.segmentRow}>
+          {(["download", "upload"] as UsageBreakdownMode[]).map((option) => {
+            const active = breakdownMode === option;
 
-          <Pressable
-            onPress={() => setBreakdownMode("upload")}
-            style={[
-              styles.metricBox,
-              {
-                backgroundColor:
-                  breakdownMode === "upload"
-                    ? primaryActionBackground
-                    : colors.surfaceMuted,
-                borderColor:
-                  breakdownMode === "upload" ? colors.primary : colors.border,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                styles.metricLabel,
-                {
-                  color:
-                    breakdownMode === "upload"
-                      ? primaryActionText
-                      : colors.textMuted,
-                },
-              ]}
-            >
-              Upload
-            </Text>
-          </Pressable>
+            return (
+              <Pressable
+                key={option}
+                onPress={() => setBreakdownMode(option)}
+                style={[
+                  styles.segmentButton,
+                  {
+                    backgroundColor: active
+                      ? primaryActionBackground
+                      : colors.surfaceMuted,
+                    borderColor: active ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.segmentButtonText,
+                    { color: active ? primaryActionText : colors.textMuted },
+                  ]}
+                >
+                  {option === "download" ? "Download" : "Upload"}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {selectedDeviceUsage.length ? (
@@ -804,123 +870,38 @@ export function UsageScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No per-device usage is available for this router in this month.
+            No per-device usage is available for this period.
           </Text>
         )}
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Daily Usage
-        </Text>
-        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          {dailySourceLabel} daily totals for {formatMonthTitle(monthOffset)}.
-        </Text>
-
-        {dailyUsageRows.length ? (
-          dailyUsageRows.map((day) => {
-            const totalMb = toNumber(day.totals.total_mb);
-            const percent =
-              maxDailyUsageMb > 0
-                ? Math.min((totalMb / maxDailyUsageMb) * 100, 100)
-                : 0;
-
-            return (
-              <View
-                key={day.usage_date}
-                style={[
-                  styles.dailyRow,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.dailyHeader}>
-                  <Text style={[styles.dailyDate, { color: colors.text }]}>
-                    {formatDailyLabel(day.usage_date)}
-                  </Text>
-                  <Text style={[styles.dailyTotal, { color: colors.text }]}>
-                    {formatMb(day.totals.total_mb)}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.dailyBarTrack,
-                    { backgroundColor: colors.border },
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.dailyBarFill,
-                      {
-                        backgroundColor: colors.primary,
-                        width: `${percent}%`,
-                      },
-                    ]}
-                  />
-                </View>
-
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  Download {formatMb(day.totals.download_mb)} · Upload{" "}
-                  {formatMb(day.totals.upload_mb)} · Records{" "}
-                  {day.totals.record_count}
-                </Text>
-              </View>
-            );
-          })
-        ) : (
-          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No daily usage is available for this month.
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.filterHeader}>
-        <View>
-          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            Record Filters
-          </Text>
-          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-            Page {recordPage} · {formatMonthTitle(monthOffset)}
-          </Text>
-        </View>
       </View>
 
       <View style={styles.filterRow}>
-        {usageFilters.map((option) => {
-          const isSelected = usageFilter === option.key;
+        {(["all", "official", "estimated"] as UsageSourceFilter[]).map((option) => {
+          const active = sourceFilter === option;
 
           return (
             <Pressable
-              key={option.key}
-              onPress={() => setUsageFilter(option.key)}
-              style={({ pressed }) => [
+              key={option}
+              onPress={() => setSourceFilter(option)}
+              style={[
                 styles.filterButton,
                 {
-                  backgroundColor: isSelected
-                    ? primaryActionBackground
-                    : colors.surface,
-                  borderColor: isSelected ? colors.primary : colors.border,
-                  opacity: pressed ? 0.75 : 1,
+                  backgroundColor: active ? primaryActionBackground : colors.surface,
+                  borderColor: active ? colors.primary : colors.border,
                 },
               ]}
             >
               <Text
                 style={[
                   styles.filterText,
-                  {
-                    color: isSelected ? primaryActionText : colors.textMuted,
-                  },
+                  { color: active ? primaryActionText : colors.textMuted },
                 ]}
               >
-                {option.label}
+                {option === "all"
+                  ? "All"
+                  : option === "official"
+                    ? "Official"
+                    : "Estimated"}
               </Text>
             </Pressable>
           );
@@ -934,12 +915,15 @@ export function UsageScreen() {
         ]}
       >
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Latest Records
+          Records
+        </Text>
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          Page {recordPage} · {activeRange.label}
         </Text>
 
-        {records.length ? (
+        {data?.records.length ? (
           <>
-            {records.map((record) => {
+            {data.records.map((record) => {
               const kind = getUsageRecordKind(record);
 
               return (
@@ -980,23 +964,13 @@ export function UsageScreen() {
                     </Text>
                   </View>
 
-                  <Text style={[styles.recordKind, { color: colors.text }]}>
-                    {getUsageKindLabel(kind)}
-                  </Text>
-
                   <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    Download: {formatMb(record.download_mb)} · Upload:{" "}
+                    Download {formatMb(record.download_mb)} · Upload{" "}
                     {formatMb(record.upload_mb)}
                   </Text>
-
                   <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     Source: {formatSource(record.source)}
                   </Text>
-
-                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    {getUsageKindHelp(kind)}
-                  </Text>
-
                   <Text style={[styles.smallText, { color: colors.textSubtle }]}>
                     {formatDateTime(record.record_start)} to{" "}
                     {formatDateTime(record.record_end)}
@@ -1007,13 +981,13 @@ export function UsageScreen() {
 
             <View style={styles.pageRow}>
               <Pressable
-                disabled={!hasPreviousPage}
+                disabled={!hasPreviousRecordPage}
                 style={[
                   styles.pageButton,
                   {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: colors.border,
-                    opacity: hasPreviousPage ? 1 : 0.45,
+                    opacity: hasPreviousRecordPage ? 1 : 0.45,
                   },
                 ]}
                 onPress={() => setRecordPage((current) => Math.max(current - 1, 1))}
@@ -1023,7 +997,7 @@ export function UsageScreen() {
                 </Text>
               </Pressable>
 
-              {Array.from({ length: QUICK_PAGE_COUNT }, (_, index) => index + 1).map((page) => (
+              {[1, 2, 3].map((page) => (
                 <Pressable
                   key={page}
                   style={[
@@ -1042,7 +1016,8 @@ export function UsageScreen() {
                     style={[
                       styles.pageButtonText,
                       {
-                        color: page === recordPage ? primaryActionText : colors.textMuted,
+                        color:
+                          page === recordPage ? primaryActionText : colors.textMuted,
                       },
                     ]}
                   >
@@ -1052,13 +1027,13 @@ export function UsageScreen() {
               ))}
 
               <Pressable
-                disabled={!hasNextPage}
+                disabled={!hasNextRecordPage}
                 style={[
                   styles.pageButton,
                   {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: colors.border,
-                    opacity: hasNextPage ? 1 : 0.45,
+                    opacity: hasNextRecordPage ? 1 : 0.45,
                   },
                 ]}
                 onPress={() => setRecordPage((current) => current + 1)}
@@ -1071,7 +1046,7 @@ export function UsageScreen() {
           </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No records match this filter for this month.
+            No records are available for this period and filter.
           </Text>
         )}
       </View>
@@ -1121,19 +1096,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E3EAF2",
   },
-  infoCard: {
-    borderRadius: 20,
-    padding: 16,
-    gap: 8,
-    borderWidth: 1,
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#617083",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-  infoTitle: {
+  cardText: {
     fontSize: 15,
-    fontWeight: "900",
+    color: "#33465B",
   },
-  infoText: {
+  bigNumber: {
+    fontSize: 36,
+    fontWeight: "900",
+    color: "#102033",
+  },
+  mutedText: {
     fontSize: 14,
-    lineHeight: 20,
+    color: "#6B7888",
+    textAlign: "center",
+  },
+  smallText: {
+    fontSize: 12,
+    color: "#6B7888",
   },
   errorCard: {
     borderRadius: 18,
@@ -1163,17 +1149,50 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
-  cardLabel: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#617083",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
+  segmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
   },
-  bigNumber: {
-    fontSize: 38,
+  segmentButton: {
+    flex: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  segmentButtonText: {
+    fontSize: 13,
     fontWeight: "900",
-    color: "#102033",
+  },
+  periodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  periodTitleWrap: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  periodTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  periodButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  periodButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
   },
   metricRow: {
     flexDirection: "row",
@@ -1202,9 +1221,59 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginTop: 4,
   },
-  deviceUsageTitleGroup: {
-    flex: 1,
-    gap: 4,
+  circularUsageWrap: {
+    alignSelf: "center",
+    width: 156,
+    height: 156,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 4,
+  },
+  circularUsageCenter: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  circularUsagePercent: {
+    fontSize: 28,
+    fontWeight: "900",
+  },
+  circularUsageLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  dailyRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 12,
+    gap: 9,
+    marginTop: 10,
+  },
+  dailyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  dailyDate: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  dailyTotal: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  dailyBarTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  dailyBarFill: {
+    height: "100%",
+    borderRadius: 999,
   },
   deviceUsageRow: {
     borderWidth: 1,
@@ -1239,12 +1308,6 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 999,
   },
-  filterHeader: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 12,
-  },
   filterRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1261,36 +1324,6 @@ const styles = StyleSheet.create({
   filterText: {
     fontSize: 13,
     fontWeight: "900",
-  },
-  dailyRow: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 12,
-    gap: 9,
-    marginTop: 10,
-  },
-  dailyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  dailyDate: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  dailyTotal: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  dailyBarTrack: {
-    height: 8,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  dailyBarFill: {
-    height: "100%",
-    borderRadius: 999,
   },
   recordRow: {
     borderWidth: 1,
@@ -1318,72 +1351,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     overflow: "hidden",
-  },
-  recordKind: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  cardText: {
-    fontSize: 15,
-    color: "#33465B",
-  },
-  smallText: {
-    fontSize: 12,
-    color: "#6B7888",
-  },
-  circularUsageWrap: {
-    alignSelf: "center",
-    width: 168,
-    height: 168,
-    alignItems: "center",
-    justifyContent: "center",
-    marginVertical: 6,
-  },
-  circularUsageCenter: {
-    position: "absolute",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-  },
-  circularUsagePercent: {
-    fontSize: 30,
-    fontWeight: "900",
-  },
-  circularUsageLabel: {
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
-  mutedText: {
-    fontSize: 14,
-    color: "#6B7888",
-    textAlign: "center",
-  },
-  monthRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  monthTitleWrap: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  monthTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  monthButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  monthButtonText: {
-    fontSize: 12,
-    fontWeight: "900",
   },
   pageRow: {
     flexDirection: "row",

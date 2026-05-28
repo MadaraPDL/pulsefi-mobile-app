@@ -116,9 +116,23 @@ export function HomeScreen() {
         routers[0]?.id ??
         null;
 
-      const usageSummary = effectiveRouterId
-        ? await getMyUsageSummary(effectiveRouterId)
-        : null;
+      let usageSummary = null;
+
+      if (effectiveRouterId) {
+        try {
+          usageSummary = await getMyUsageSummary(effectiveRouterId, {
+            sourceKind: "official",
+          });
+
+          if (Number(usageSummary.totals.record_count ?? 0) === 0) {
+            usageSummary = await getMyUsageSummary(effectiveRouterId, {
+              sourceKind: "estimated",
+            });
+          }
+        } catch {
+          usageSummary = null;
+        }
+      }
 
       setData({
         summary,
