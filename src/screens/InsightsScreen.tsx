@@ -36,7 +36,7 @@ type InsightsData = {
   subscriptions: MySubscription[];
 };
 
-type InsightPeriodMode = "monthly" | "daily";
+type InsightsTab = "predictions" | "recommendations";
 type RecommendationStatusFilter = "all" | "pending" | "accepted" | "rejected";
 
 const INSIGHT_PAGE_SIZE = 5;
@@ -73,48 +73,6 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function getMonthDate(monthOffset: number) {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
-}
-
-function getDayDate(dayOffset: number) {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOffset);
-}
-
-function getMonthRange(monthOffset: number) {
-  const month = getMonthDate(monthOffset);
-  const start = new Date(month.getFullYear(), month.getMonth(), 1);
-  const end = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-
-  return {
-    start,
-    end,
-    label: start.toLocaleDateString(undefined, {
-      month: "long",
-      year: "numeric",
-    }),
-  };
-}
-
-function getDayRange(dayOffset: number) {
-  const day = getDayDate(dayOffset);
-  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-  const end = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-
-  return {
-    start,
-    end,
-    label: start.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-  };
-}
-
 function isWithinUserVisibleWindow(value: string | null | undefined) {
   if (!value) {
     return true;
@@ -128,31 +86,6 @@ function isWithinUserVisibleWindow(value: string | null | undefined) {
 
   const cutoff = Date.now() - USER_VISIBLE_INSIGHT_DAYS * 24 * 60 * 60 * 1000;
   return timestamp >= cutoff;
-}
-
-function isDateInsideRange(value: string | null | undefined, start: Date, end: Date) {
-  if (!value) {
-    return false;
-  }
-
-  const timestamp = new Date(value).getTime();
-
-  if (Number.isNaN(timestamp)) {
-    return false;
-  }
-
-  return timestamp >= start.getTime() && timestamp < end.getTime();
-}
-
-function predictionOverlapsRange(prediction: MyPrediction, start: Date, end: Date) {
-  const periodStart = new Date(prediction.period_start).getTime();
-  const periodEnd = new Date(prediction.period_end).getTime();
-
-  if (Number.isNaN(periodStart) || Number.isNaN(periodEnd)) {
-    return isDateInsideRange(prediction.created_at, start, end);
-  }
-
-  return periodStart < end.getTime() && periodEnd >= start.getTime();
 }
 
 function getRiskStyle(
@@ -212,9 +145,7 @@ export function InsightsScreen() {
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
 
   const [data, setData] = useState<InsightsData | null>(null);
-  const [periodMode, setPeriodMode] = useState<InsightPeriodMode>("monthly");
-  const [monthOffset, setMonthOffset] = useState(0);
-  const [dayOffset, setDayOffset] = useState(0);
+  const [activeTab, setActiveTab] = useState<InsightsTab>("predictions");
   const [predictionPage, setPredictionPage] = useState(1);
   const [recommendationPage, setRecommendationPage] = useState(1);
   const [recommendationStatusFilter, setRecommendationStatusFilter] =
@@ -224,12 +155,6 @@ export function InsightsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  const activeRange = useMemo(() => {
-    return periodMode === "monthly"
-      ? getMonthRange(monthOffset)
-      : getDayRange(dayOffset);
-  }, [dayOffset, monthOffset, periodMode]);
 
   const loadInsights = useCallback(async (refreshing = false) => {
     try {
@@ -308,7 +233,7 @@ export function InsightsScreen() {
 
   const selectedServiceLineId = selectedRouter?.user_subscription_id ?? null;
 
-  const periodPredictions = useMemo(() => {
+  const selectedPredictions = useMemo(() => {
     if (!selectedServiceLineId) {
       return [];
     }
@@ -316,55 +241,31 @@ export function InsightsScreen() {
     return (data?.predictions ?? []).filter(
       (prediction) =>
         prediction.user_subscription_id === selectedServiceLineId &&
-        isWithinUserVisibleWindow(prediction.created_at ?? prediction.prediction_date) &&
-        predictionOverlapsRange(prediction, activeRange.start, activeRange.end)
+        isWithinUserVisibleWindow(prediction.created_at ?? prediction.prediction_date)
     );
-  }, [activeRange.end, activeRange.start, data?.predictions, selectedServiceLineId]);
+  }, [data?.predictions, selectedServiceLineId]);
 
-  const periodPredictionIds = useMemo(() => {
-    return new Set(periodPredictions.map((prediction) => prediction.id));
-  }, [periodPredictions]);
-
-  const periodRecommendations = useMemo(() => {
+  const selectedRecommendations = useMemo(() => {
     if (!selectedServiceLineId) {
       return [];
     }
 
-    return (data?.recommendations ?? []).filter((recommendation) => {
-      if (recommendation.user_subscription_id !== selectedServiceLineId) {
-        return false;
-      }
-
-      if (!isWithinUserVisibleWindow(recommendation.created_at)) {
-        return false;
-      }
-
-      const belongsToVisiblePrediction =
-        recommendation.prediction_id !== null &&
-        periodPredictionIds.has(recommendation.prediction_id);
-
-      return (
-        belongsToVisiblePrediction ||
-        isDateInsideRange(recommendation.created_at, activeRange.start, activeRange.end)
-      );
-    });
-  }, [
-    activeRange.end,
-    activeRange.start,
-    data?.recommendations,
-    periodPredictionIds,
-    selectedServiceLineId,
-  ]);
+    return (data?.recommendations ?? []).filter(
+      (recommendation) =>
+        recommendation.user_subscription_id === selectedServiceLineId &&
+        isWithinUserVisibleWindow(recommendation.created_at)
+    );
+  }, [data?.recommendations, selectedServiceLineId]);
 
   const filteredRecommendations = useMemo(() => {
-    return periodRecommendations.filter((recommendation) => {
+    return selectedRecommendations.filter((recommendation) => {
       if (recommendationStatusFilter === "all") {
         return true;
       }
 
       return recommendation.status.toLowerCase() === recommendationStatusFilter;
     });
-  }, [periodRecommendations, recommendationStatusFilter]);
+  }, [selectedRecommendations, recommendationStatusFilter]);
 
   const selectedPlanChangeRequests = useMemo(() => {
     if (!selectedServiceLineId) {
@@ -376,9 +277,9 @@ export function InsightsScreen() {
     );
   }, [data?.planChangeRequests, selectedServiceLineId]);
 
-  const predictionPageCount = getPageCount(periodPredictions.length);
+  const predictionPageCount = getPageCount(selectedPredictions.length);
   const safePredictionPage = Math.min(predictionPage, predictionPageCount);
-  const paginatedPredictions = periodPredictions.slice(
+  const paginatedPredictions = selectedPredictions.slice(
     (safePredictionPage - 1) * INSIGHT_PAGE_SIZE,
     safePredictionPage * INSIGHT_PAGE_SIZE
   );
@@ -396,7 +297,7 @@ export function InsightsScreen() {
   useEffect(() => {
     setPredictionPage(1);
     setRecommendationPage(1);
-  }, [activeRange.label, periodMode, selectedServiceLineId]);
+  }, [selectedServiceLineId]);
 
   useEffect(() => {
     setRecommendationPage(1);
@@ -472,7 +373,8 @@ export function InsightsScreen() {
         Predictions & recommendations
       </Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Choose a month or day, then review only the matching insights.
+        Switch between predictions and recommendations, then use page controls
+        like records/logs.
       </Text>
 
       {errorMessage ? (
@@ -522,8 +424,8 @@ export function InsightsScreen() {
       ) : null}
 
       <View style={styles.segmentRow}>
-        {(["monthly", "daily"] as InsightPeriodMode[]).map((option) => {
-          const active = periodMode === option;
+        {(["predictions", "recommendations"] as InsightsTab[]).map((option) => {
+          const active = activeTab === option;
 
           return (
             <Pressable
@@ -535,7 +437,7 @@ export function InsightsScreen() {
                   borderColor: active ? colors.primary : colors.border,
                 },
               ]}
-              onPress={() => setPeriodMode(option)}
+              onPress={() => setActiveTab(option)}
             >
               <Text
                 style={[
@@ -543,7 +445,7 @@ export function InsightsScreen() {
                   { color: active ? primaryActionText : colors.textMuted },
                 ]}
               >
-                {option === "monthly" ? "Monthly" : "Daily"}
+                {option === "predictions" ? "Predictions" : "Recommendations"}
               </Text>
             </Pressable>
           );
@@ -577,279 +479,227 @@ export function InsightsScreen() {
         </Text>
       </View>
 
-      <View style={styles.periodRow}>
-        <Pressable
+      {activeTab === "predictions" ? (
+        <View
           style={[
-            styles.periodButton,
+            styles.card,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}
-          onPress={() => {
-            if (periodMode === "monthly") {
-              setMonthOffset((current) => current + 1);
-            } else {
-              setDayOffset((current) => current + 1);
-            }
-          }}
         >
-          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
-            Previous {periodMode === "monthly" ? "month" : "day"}
-          </Text>
-        </Pressable>
-
-        <View style={styles.periodTitleWrap}>
           <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-            {periodMode === "monthly" ? "Month" : "Day"}
+            Predictions
           </Text>
-          <Text style={[styles.periodTitle, { color: colors.text }]}>
-            {activeRange.label}
+          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+            {selectedPredictions.length} recent prediction(s). Older predictions
+            stay in admin/database but are hidden from the user app.
           </Text>
-        </View>
 
-        <Pressable
-          disabled={periodMode === "monthly" ? monthOffset === 0 : dayOffset === 0}
-          style={[
-            styles.periodButton,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              opacity:
-                periodMode === "monthly"
-                  ? monthOffset === 0
-                    ? 0.45
-                    : 1
-                  : dayOffset === 0
-                    ? 0.45
-                    : 1,
-            },
-          ]}
-          onPress={() => {
-            if (periodMode === "monthly") {
-              setMonthOffset((current) => Math.max(current - 1, 0));
-            } else {
-              setDayOffset((current) => Math.max(current - 1, 0));
-            }
-          }}
-        >
-          <Text style={[styles.periodButtonText, { color: colors.primary }]}>
-            Next {periodMode === "monthly" ? "month" : "day"}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <View style={styles.sectionHeaderRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-              Predictions
-            </Text>
-            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              {periodPredictions.length} recent prediction(s) for {activeRange.label}
-            </Text>
-          </View>
-        </View>
-
-        {periodPredictions.length ? (
-          <>
-            {paginatedPredictions.map((prediction) => (
-              <View
-                key={prediction.id}
-                style={[
-                  styles.itemRow,
-                  { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.itemHeader}>
-                  <View style={styles.itemTitleGroup}>
-                    <Text style={[styles.itemTitle, { color: colors.text }]}>
-                      {formatGb(prediction.predicted_usage_gb)}
-                    </Text>
-                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                      {formatDate(prediction.period_start)} →{" "}
-                      {formatDate(prediction.period_end)}
-                    </Text>
-                  </View>
-
-                  <Text style={[styles.pill, getRiskStyle(prediction.risk_level, colors)]}>
-                    {formatLabel(prediction.risk_level)}
-                  </Text>
-                </View>
-
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                  Confidence: {formatPercent(prediction.confidence_score)}
-                </Text>
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  Model: {prediction.model_version ?? "Not specified"}
-                </Text>
-              </View>
-            ))}
-
-            <PageControls
-              page={safePredictionPage}
-              pageCount={predictionPageCount}
-              onPageChange={setPredictionPage}
-              colors={colors}
-              primaryActionBackground={primaryActionBackground}
-              primaryActionText={primaryActionText}
-            />
-          </>
-        ) : (
-          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No recent predictions found for this {periodMode === "monthly" ? "month" : "day"}.
-          </Text>
-        )}
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Recommendations
-        </Text>
-        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          {filteredRecommendations.length} recent recommendation(s) for{" "}
-          {activeRange.label}
-        </Text>
-
-        <View style={styles.filterRow}>
-          {(
-            [
-              { key: "all", label: `All (${periodRecommendations.length})` },
-              { key: "pending", label: "Pending" },
-              { key: "accepted", label: "Accepted" },
-              { key: "rejected", label: "Rejected" },
-            ] as Array<{ key: RecommendationStatusFilter; label: string }>
-          ).map((option) => {
-            const active = recommendationStatusFilter === option.key;
-
-            return (
-              <Pressable
-                key={option.key}
-                style={[
-                  styles.filterButton,
-                  {
-                    backgroundColor: active
-                      ? primaryActionBackground
-                      : colors.surfaceMuted,
-                    borderColor: active ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => setRecommendationStatusFilter(option.key)}
-              >
-                <Text
-                  style={[
-                    styles.filterText,
-                    { color: active ? primaryActionText : colors.textMuted },
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {filteredRecommendations.length ? (
-          <>
-            {paginatedRecommendations.map((recommendation) => {
-              const isCreating = creatingRequestId === recommendation.id;
-              const canRequest = canRequestPlanChange(recommendation);
-
-              return (
+          {selectedPredictions.length ? (
+            <>
+              {paginatedPredictions.map((prediction) => (
                 <View
-                  key={recommendation.id}
+                  key={prediction.id}
                   style={[
                     styles.itemRow,
-                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
                   ]}
                 >
                   <View style={styles.itemHeader}>
                     <View style={styles.itemTitleGroup}>
                       <Text style={[styles.itemTitle, { color: colors.text }]}>
-                        {formatLabel(recommendation.recommendation_type)}
+                        {formatGb(prediction.predicted_usage_gb)}
                       </Text>
                       <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                        {formatDate(recommendation.created_at)}
+                        {formatDate(prediction.period_start)} →{" "}
+                        {formatDate(prediction.period_end)}
                       </Text>
                     </View>
 
-                    <Text
-                      style={[
-                        styles.statusPill,
-                        {
-                          backgroundColor: colors.surface,
-                          borderColor: colors.border,
-                          color: colors.primary,
-                        },
-                      ]}
-                    >
-                      {formatLabel(recommendation.status)}
+                    <Text style={[styles.pill, getRiskStyle(prediction.risk_level, colors)]}>
+                      {formatLabel(prediction.risk_level)}
                     </Text>
                   </View>
 
                   <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                    {recommendation.recommendation_text}
+                    Confidence: {formatPercent(prediction.confidence_score)}
                   </Text>
-
-                  {recommendation.reason ? (
-                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                      Reason: {recommendation.reason}
-                    </Text>
-                  ) : null}
-
                   <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                    Confidence: {formatPercent(recommendation.confidence_score)}
+                    Model: {prediction.model_version ?? "Not specified"}
                   </Text>
-
-                  {canRequest ? (
-                    <Pressable
-                      disabled={isCreating}
-                      style={[
-                        styles.primaryButton,
-                        {
-                          backgroundColor: primaryActionBackground,
-                          borderColor: colors.primary,
-                        },
-                        isCreating && styles.primaryButtonDisabled,
-                      ]}
-                      onPress={() => void handleRequestPlanChange(recommendation.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.primaryButtonText,
-                          { color: primaryActionText },
-                        ]}
-                      >
-                        {isCreating ? "Sending..." : "Request for selected router"}
-                      </Text>
-                    </Pressable>
-                  ) : null}
                 </View>
+              ))}
+
+              <PageControls
+                page={safePredictionPage}
+                pageCount={predictionPageCount}
+                onPageChange={setPredictionPage}
+                colors={colors}
+                primaryActionBackground={primaryActionBackground}
+                primaryActionText={primaryActionText}
+              />
+            </>
+          ) : (
+            <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+              No recent predictions found for this selected router.
+            </Text>
+          )}
+        </View>
+      ) : null}
+
+      {activeTab === "recommendations" ? (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            Recommendations
+          </Text>
+          <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+            {filteredRecommendations.length} recommendation(s) match the current
+            filter.
+          </Text>
+
+          <View style={styles.filterRow}>
+            {(
+              [
+                { key: "all", label: `All (${selectedRecommendations.length})` },
+                { key: "pending", label: "Pending" },
+                { key: "accepted", label: "Accepted" },
+                { key: "rejected", label: "Rejected" },
+              ] as Array<{ key: RecommendationStatusFilter; label: string }>
+            ).map((option) => {
+              const active = recommendationStatusFilter === option.key;
+
+              return (
+                <Pressable
+                  key={option.key}
+                  style={[
+                    styles.filterButton,
+                    {
+                      backgroundColor: active
+                        ? primaryActionBackground
+                        : colors.surfaceMuted,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => setRecommendationStatusFilter(option.key)}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      { color: active ? primaryActionText : colors.textMuted },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
               );
             })}
+          </View>
 
-            <PageControls
-              page={safeRecommendationPage}
-              pageCount={recommendationPageCount}
-              onPageChange={setRecommendationPage}
-              colors={colors}
-              primaryActionBackground={primaryActionBackground}
-              primaryActionText={primaryActionText}
-            />
-          </>
-        ) : (
-          <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No recent recommendations match this period and filter.
-          </Text>
-        )}
-      </View>
+          {filteredRecommendations.length ? (
+            <>
+              {paginatedRecommendations.map((recommendation) => {
+                const isCreating = creatingRequestId === recommendation.id;
+                const canRequest = canRequestPlanChange(recommendation);
+
+                return (
+                  <View
+                    key={recommendation.id}
+                    style={[
+                      styles.itemRow,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.itemHeader}>
+                      <View style={styles.itemTitleGroup}>
+                        <Text style={[styles.itemTitle, { color: colors.text }]}>
+                          {formatLabel(recommendation.recommendation_type)}
+                        </Text>
+                        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                          {formatDate(recommendation.created_at)}
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.statusPill,
+                          {
+                            backgroundColor: colors.surface,
+                            borderColor: colors.border,
+                            color: colors.primary,
+                          },
+                        ]}
+                      >
+                        {formatLabel(recommendation.status)}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                      {recommendation.recommendation_text}
+                    </Text>
+
+                    {recommendation.reason ? (
+                      <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                        Reason: {recommendation.reason}
+                      </Text>
+                    ) : null}
+
+                    <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                      Confidence: {formatPercent(recommendation.confidence_score)}
+                    </Text>
+
+                    {canRequest ? (
+                      <Pressable
+                        disabled={isCreating}
+                        style={[
+                          styles.primaryButton,
+                          {
+                            backgroundColor: primaryActionBackground,
+                            borderColor: colors.primary,
+                          },
+                          isCreating && styles.primaryButtonDisabled,
+                        ]}
+                        onPress={() => void handleRequestPlanChange(recommendation.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.primaryButtonText,
+                            { color: primaryActionText },
+                          ]}
+                        >
+                          {isCreating ? "Sending..." : "Request for selected router"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })}
+
+              <PageControls
+                page={safeRecommendationPage}
+                pageCount={recommendationPageCount}
+                onPageChange={setRecommendationPage}
+                colors={colors}
+                primaryActionBackground={primaryActionBackground}
+                primaryActionText={primaryActionText}
+              />
+            </>
+          ) : (
+            <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
+              No recent recommendations match this filter.
+            </Text>
+          )}
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -1070,37 +920,6 @@ const styles = StyleSheet.create({
   segmentButtonText: {
     fontSize: 13,
     fontWeight: "900",
-  },
-  periodRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  periodTitleWrap: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  periodTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  periodButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  periodButtonText: {
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
   },
   filterRow: {
     flexDirection: "row",
