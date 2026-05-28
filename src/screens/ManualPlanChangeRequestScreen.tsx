@@ -18,8 +18,10 @@ import {
   getMySubscriptions,
   type MySubscriptionRequestType,
 } from "../api/appUser";
+import { MobilePager } from "../components/MobilePager";
 import { PulseFiButton } from "../components/PulseFiButton";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { paginateMobileRows } from "../utils/mobilePagination";
 import type {
   DecimalLike,
   MyPlanChangeRequest,
@@ -160,6 +162,8 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [confirmationText, setConfirmationText] = useState("");
+  const [targetPlansPage, setTargetPlansPage] = useState(1);
+  const [requestsPage, setRequestsPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -181,7 +185,7 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
         await Promise.all([
           getMySubscriptions(),
           getMyAvailablePlans(),
-          getMyPlanChangeRequests(20),
+          getMyPlanChangeRequests(50),
           getMyRouters(),
         ]);
 
@@ -295,6 +299,12 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
     () => availableTargetPlans.find((plan) => plan.id === selectedPlanId) ?? null,
     [availableTargetPlans, selectedPlanId]
   );
+
+  const targetPlanPagination = paginateMobileRows(
+    availableTargetPlans,
+    targetPlansPage
+  );
+  const requestPagination = paginateMobileRows(requests, requestsPage);
 
   useEffect(() => {
     if (!availableTargetPlans.length || requestMode !== "change_plan") {
@@ -415,8 +425,8 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
         />
       }
     >
-      <Text style={styles.eyebrow}>Service Request</Text>
-      <Text style={styles.title}>Request account or plan changes</Text>
+      <Text style={styles.eyebrow}>Service Requests</Text>
+      <Text style={styles.title}>Manage service requests</Text>
       <Text style={styles.subtitle}>
         Choose the exact router/service line you want to change, explain the
         reason, then type the confirmation phrase. Your ISP Admin must approve
@@ -463,28 +473,42 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Request Type</Text>
 
-        {requestModeOptions.map((option) => {
-          const selected = requestMode === option.value;
+        <View style={styles.segmentRow}>
+          {requestModeOptions.map((option) => {
+            const selected = requestMode === option.value;
 
-          return (
-            <Pressable
-              key={option.value}
-              style={[styles.optionRow, selected && styles.selectedOption]}
-              onPress={() => setRequestMode(option.value)}
-            >
-              <View style={styles.optionHeader}>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={styles.optionTitle}>{option.title}</Text>
-                  <Text style={styles.smallText}>{option.description}</Text>
-                </View>
-
-                <Text style={[styles.statusPill, selected && styles.activePill]}>
-                  {selected ? "Selected" : "Choose"}
+            return (
+              <Pressable
+                key={option.value}
+                style={[
+                  styles.segmentButton,
+                  selected && styles.segmentButtonActive,
+                ]}
+                onPress={() => {
+                  setTargetPlansPage(1);
+                  setRequestsPage(1);
+                  setRequestMode(option.value);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.segmentButtonText,
+                    selected && styles.segmentButtonTextActive,
+                  ]}
+                >
+                  {option.title}
                 </Text>
-              </View>
-            </Pressable>
-          );
-        })}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.smallText}>
+          {
+            requestModeOptions.find((option) => option.value === requestMode)
+              ?.description
+          }
+        </Text>
       </View>
 
       <View style={styles.card}>
@@ -545,7 +569,7 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
           <Text style={styles.cardLabel}>Target Plan</Text>
 
           {availableTargetPlans.length ? (
-            availableTargetPlans.map((plan) => {
+            targetPlanPagination.pageRows.map((plan) => {
               const selected = selectedPlanId === plan.id;
 
               return (
@@ -580,6 +604,12 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
               No other active plans are available for this ISP yet.
             </Text>
           )}
+
+          <MobilePager
+            page={targetPlanPagination.safePage}
+            pageCount={targetPlanPagination.pageCount}
+            onPageChange={setTargetPlansPage}
+          />
         </View>
       ) : null}
 
@@ -668,7 +698,7 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
         <Text style={styles.cardLabel}>Recent Requests</Text>
 
         {requests.length ? (
-          requests.slice(0, 5).map((request) => (
+          requestPagination.pageRows.map((request) => (
             <View key={request.id} style={styles.requestRow}>
               <View style={styles.optionHeader}>
                 <View style={{ flex: 1, gap: 4 }}>
@@ -691,6 +721,12 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
         ) : (
           <Text style={styles.mutedText}>No requests yet.</Text>
         )}
+
+        <MobilePager
+          page={requestPagination.safePage}
+          pageCount={requestPagination.pageCount}
+          onPageChange={setRequestsPage}
+        />
       </View>
     </ScrollView>
   );
@@ -794,6 +830,37 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
     boldText: {
       fontWeight: "900",
       color: colors.text,
+    },
+    segmentRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+    },
+    segmentButton: {
+      flex: 1,
+      minHeight: 44,
+      justifyContent: "center",
+      alignItems: "center",
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+    },
+    segmentButtonActive: {
+      borderColor: colors.primary,
+      backgroundColor:
+        colors.mode === "dark" ? "rgba(0, 209, 255, 0.1)" : "#EAF9FE",
+    },
+    segmentButtonText: {
+      fontSize: 12,
+      fontWeight: "900",
+      textAlign: "center",
+      color: colors.textMuted,
+    },
+    segmentButtonTextActive: {
+      color: colors.mode === "dark" ? colors.primary : "#0B5D7A",
     },
     optionRow: {
       borderRadius: 18,

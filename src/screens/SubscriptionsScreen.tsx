@@ -10,7 +10,9 @@ import {
 } from "react-native";
 
 import { getMySubscription, getMySubscriptions } from "../api/appUser";
+import { MobilePager } from "../components/MobilePager";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { paginateMobileRows } from "../utils/mobilePagination";
 import type { DecimalLike, MySubscription } from "../types/appUser";
 
 function toNumber(value: DecimalLike | null | undefined) {
@@ -64,6 +66,7 @@ export function SubscriptionsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [subscriptionsPage, setSubscriptionsPage] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadSubscriptions = useCallback(async (refreshing = false) => {
@@ -110,6 +113,11 @@ export function SubscriptionsScreen() {
   const activeSubscriptions = useMemo(
     () => subscriptions.filter(isActiveSubscription),
     [subscriptions]
+  );
+
+  const subscriptionsPagination = paginateMobileRows(
+    subscriptions,
+    subscriptionsPage
   );
 
   const monthlyTotal = useMemo(
@@ -294,7 +302,7 @@ export function SubscriptionsScreen() {
         <Text style={styles.cardLabel}>All Subscriptions</Text>
 
         {subscriptions.length ? (
-          subscriptions.map((subscription) => {
+          subscriptionsPagination.pageRows.map((subscription) => {
             const selected = selectedSubscription?.id === subscription.id;
             const loadingDetail = loadingDetailId === subscription.id;
 
@@ -355,6 +363,12 @@ export function SubscriptionsScreen() {
             No subscriptions were found for this account yet.
           </Text>
         )}
+
+        <MobilePager
+          page={subscriptionsPagination.safePage}
+          pageCount={subscriptionsPagination.pageCount}
+          onPageChange={setSubscriptionsPage}
+        />
       </View>
     </ScrollView>
   );

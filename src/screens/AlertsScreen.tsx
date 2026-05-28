@@ -9,7 +9,9 @@ import {
   View,
 } from "react-native";
 
+import { MobilePager } from "../components/MobilePager";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { paginateMobileRows } from "../utils/mobilePagination";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 
 import {
@@ -88,6 +90,7 @@ export function AlertsScreen() {
     useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<MyAlert | null>(null);
   const [alertFilter, setAlertFilter] = useState<AlertFilter>("all");
+  const [alertsPage, setAlertsPage] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadAlerts = useCallback(async (refreshing = false) => {
@@ -217,6 +220,8 @@ export function AlertsScreen() {
       return severity === "high" || severity === "critical";
     });
   }, [alertFilter, routerAlerts]);
+
+  const alertsPagination = paginateMobileRows(filteredAlerts, alertsPage);
 
   async function handleViewAlertDetail(alertId: string) {
     if (selectedAlert?.id === alertId) {
@@ -365,7 +370,10 @@ export function AlertsScreen() {
                   paddingHorizontal: 12,
                   paddingVertical: 7,
                 }}
-                onPress={() => setAlertFilter(option.key)}
+                onPress={() => {
+                  setAlertsPage(1);
+                  setAlertFilter(option.key);
+                }}
               >
                 <Text
                   style={{
@@ -382,7 +390,7 @@ export function AlertsScreen() {
         </View>
 
         {filteredAlerts.length ? (
-          filteredAlerts.map((alert) => {
+          alertsPagination.pageRows.map((alert) => {
             const unread = isUnread(alert);
             const isUpdating = updatingAlertId === alert.id;
             const isLoadingDetail = loadingAlertDetailId === alert.id;
@@ -541,6 +549,12 @@ export function AlertsScreen() {
             intelligence runs create usage/device events.
           </Text>
         )}
+
+        <MobilePager
+          page={alertsPagination.safePage}
+          pageCount={alertsPagination.pageCount}
+          onPageChange={setAlertsPage}
+        />
       </View>
     </ScrollView>
   );

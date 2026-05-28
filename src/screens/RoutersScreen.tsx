@@ -15,7 +15,9 @@ import {
   getMyRouters,
   getMySubscriptions,
 } from "../api/appUser";
+import { MobilePager } from "../components/MobilePager";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
+import { paginateMobileRows } from "../utils/mobilePagination";
 import type {
   MyRouter,
   MyRouterCapabilities,
@@ -80,6 +82,7 @@ export function RoutersScreen({ selectedRouterId, onSelectedRouterChange }: Rout
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [routersPage, setRoutersPage] = useState(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const loadRouters = useCallback(async (refreshing = false) => {
@@ -192,6 +195,8 @@ export function RoutersScreen({ selectedRouterId, onSelectedRouterChange }: Rout
       subscription.subscription_label ?? getRouterDisplayName(router)
     } / ${subscription.plan.plan_name} / ${formatLabel(subscription.status)}`;
   }
+
+  const routersPagination = paginateMobileRows(routers, routersPage);
 
   const simulatorCount = useMemo(
     () =>
@@ -351,7 +356,7 @@ export function RoutersScreen({ selectedRouterId, onSelectedRouterChange }: Rout
         <Text style={styles.cardLabel}>All Routers</Text>
 
         {routers.length ? (
-          routers.map((router) => {
+          routersPagination.pageRows.map((router) => {
             const selected = selectedRouter?.id === router.id;
             const loadingDetail = loadingDetailId === router.id;
             const capabilities = capabilitiesByRouterId[router.id];
@@ -404,6 +409,12 @@ export function RoutersScreen({ selectedRouterId, onSelectedRouterChange }: Rout
             No routers were found for this account yet.
           </Text>
         )}
+
+        <MobilePager
+          page={routersPagination.safePage}
+          pageCount={routersPagination.pageCount}
+          onPageChange={setRoutersPage}
+        />
       </View>
     </ScrollView>
   );

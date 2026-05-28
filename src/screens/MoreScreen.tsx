@@ -51,8 +51,8 @@ const internetItems: MoreMenuItem[] = [
   },
   {
     key: "planRequest",
-    title: "Request a plan change",
-    subtitle: "Ask your ISP to upgrade or change your package.",
+    title: "Service requests",
+    subtitle: "Change plan or request subscription/account suspension.",
     icon: "swap-horizontal-outline",
   },
   {
@@ -75,7 +75,7 @@ const accountItems: MoreMenuItem[] = [
 const sectionTitles: Record<MoreSection, string> = {
   routers: "My routers",
   plans: "My package",
-  planRequest: "Request a plan change",
+  planRequest: "Service requests",
   insights: "Predictions & recommendations",
   profile: "Profile & security",
 };
@@ -83,7 +83,7 @@ const sectionTitles: Record<MoreSection, string> = {
 const sectionSubtitles: Record<MoreSection, string> = {
   routers: "Select the router/service you want PulseFi to show.",
   plans: "Review your current package and subscription details.",
-  planRequest: "Send a package change request to your ISP.",
+  planRequest: "Send service requests to your ISP Admin.",
   insights: "Check predictions and recommendations for your account.",
   profile: "Update account settings and security options.",
 };
