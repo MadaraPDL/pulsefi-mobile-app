@@ -512,7 +512,7 @@ export function UsageScreen() {
             onPress={() => void loadUsage(true)}
           >
             <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>
-              Retry refresh
+              Refresh
             </Text>
           </Pressable>
         </View>

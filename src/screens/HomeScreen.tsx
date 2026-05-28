@@ -273,7 +273,7 @@ export function HomeScreen() {
             onPress={() => void loadDashboard(true)}
           >
             <Text style={[styles.retryButtonText, { color: colors.buttonText }]}>
-              Retry refresh
+              Refresh
             </Text>
           </Pressable>
         </View>
