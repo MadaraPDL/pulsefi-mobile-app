@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -14,26 +14,27 @@ import Svg, { Circle } from "react-native-svg";
 
 import {
   getMyDailyUsage,
+  getMyDeviceUsageList,
   getMyRouters,
   getMySubscriptions,
   getMyUsageRecords,
   getMyUsageSummary,
-  getMyDeviceUsageList,
 } from "../api/appUser";
 import { usePulseFiTheme } from "../theme/usePulseFiTheme";
 import { useSelectedRouter } from "../state/SelectedRouterContext";
 import type {
   DecimalLike,
+  MyDailyUsage,
+  MyDeviceUsage,
   MyRouter,
   MySubscription,
   MyUsageRecord,
   MyUsageSummary,
-  MyDailyUsage,
-  MyDeviceUsage,
 } from "../types/appUser";
 
 type UsageData = {
-  summary: MyUsageSummary;
+  officialSummary: MyUsageSummary | null;
+  estimatedSummary: MyUsageSummary | null;
   dailyUsage: MyDailyUsage[];
   records: MyUsageRecord[];
   deviceUsage: MyDeviceUsage[];
@@ -43,6 +44,10 @@ type UsageData = {
 
 type UsageFilter = "all" | "official" | "estimated";
 type UsageBreakdownMode = "download" | "upload";
+type SourceKind = "official" | "estimated";
+
+const PAGE_SIZE = 5;
+const QUICK_PAGE_COUNT = 3;
 
 const usageFilters: { key: UsageFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -55,7 +60,7 @@ function toNumber(value: DecimalLike | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function formatMb(value: DecimalLike) {
+function formatMb(value: DecimalLike | number) {
   const mb = toNumber(value);
 
   if (mb >= 1024) {
@@ -83,6 +88,27 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function formatMonthTitle(monthOffset: number) {
+  const now = new Date();
+  const monthDate = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+
+  return monthDate.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function getMonthRange(monthOffset: number) {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
+
+  return {
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+  };
+}
+
 function formatSource(value: string | null) {
   if (!value) {
     return "Unknown source";
@@ -99,20 +125,19 @@ function getUsageRecordKind(record: MyUsageRecord): Exclude<UsageFilter, "all"> 
 
 function getUsageKindLabel(kind: Exclude<UsageFilter, "all">) {
   if (kind === "official") {
-    return "Official subscription usage";
+    return "Official service total";
   }
 
-  return "Estimated per-device usage";
+  return "Estimated device usage";
 }
 
 function getUsageKindHelp(kind: Exclude<UsageFilter, "all">) {
   if (kind === "official") {
-    return "This is the subscription-level usage that should come from the ISP system, RADIUS, or ISP API.";
+    return "This is the service-line total used for package-limit explanation.";
   }
 
-  return "This is device-level usage estimated from router/CPE data when the router supports device visibility.";
+  return "This is router/CPE per-device usage and may be approximate.";
 }
-
 
 function getDeviceDisplayName(device: MyDeviceUsage) {
   return device.device_name ?? device.mac_address ?? "Unknown device";
@@ -128,28 +153,16 @@ function getRouterDisplayName(router: MyRouter | null) {
   return router?.router_name ?? router?.router_model ?? "No router selected";
 }
 
-function sumUsageRecords(records: MyUsageRecord[]) {
-  return records.reduce(
-    (totals, record) => ({
-      total_mb: totals.total_mb + toNumber(record.total_mb),
-      download_mb: totals.download_mb + toNumber(record.download_mb),
-      upload_mb: totals.upload_mb + toNumber(record.upload_mb),
-      record_count: totals.record_count + 1,
-    }),
-    {
-      total_mb: 0,
-      download_mb: 0,
-      upload_mb: 0,
-      record_count: 0,
-    }
-  );
-}
-
 function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
   const totals = summary?.totals;
 
   if (!totals) {
-    return null;
+    return {
+      total_mb: 0,
+      download_mb: 0,
+      upload_mb: 0,
+      record_count: 0,
+    };
   }
 
   return {
@@ -159,23 +172,6 @@ function normalizeUsageSummary(summary: MyUsageSummary | null | undefined) {
     record_count: totals.record_count,
   };
 }
-
-function getUsageSourceKind(record: MyUsageRecord) {
-  return record.device_id ? "estimated" : "official";
-}
-
-function summarizeRecordsWithoutDoubleCounting(records: MyUsageRecord[]) {
-  const officialRecords = records.filter(
-    (record) => getUsageSourceKind(record) === "official"
-  );
-
-  if (officialRecords.length) {
-    return sumUsageRecords(officialRecords);
-  }
-
-  return sumUsageRecords(records);
-}
-
 
 function CircularUsageGraph({
   usedMb,
@@ -240,7 +236,8 @@ export function UsageScreen() {
   const primaryActionText = colors.mode === "dark" ? colors.primary : "#0B5D7A";
   const [data, setData] = useState<UsageData | null>(null);
   const [usageFilter, setUsageFilter] = useState<UsageFilter>("all");
-  const [recordLimit, setRecordLimit] = useState(5);
+  const [recordPage, setRecordPage] = useState(1);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [breakdownMode, setBreakdownMode] =
     useState<UsageBreakdownMode>("download");
   const [isLoading, setIsLoading] = useState(true);
@@ -277,14 +274,61 @@ export function UsageScreen() {
         setSelectedRouterId(effectiveRouterId);
       }
 
-      const [summary, dailyUsage, records, deviceUsage] = await Promise.all([
-        getMyUsageSummary(effectiveRouterId),
-        getMyDailyUsage(7, effectiveRouterId),
-        getMyUsageRecords(100, effectiveRouterId),
-        getMyDeviceUsageList(50, effectiveRouterId),
+      const range = getMonthRange(monthOffset);
+      const sourceKind: SourceKind | null =
+        usageFilter === "all" ? null : usageFilter;
+      const offset = (recordPage - 1) * PAGE_SIZE;
+
+      const [
+        officialSummary,
+        estimatedSummary,
+        officialDailyUsage,
+        estimatedDailyUsage,
+        records,
+        deviceUsage,
+      ] = await Promise.all([
+        effectiveRouterId
+          ? getMyUsageSummary(effectiveRouterId, {
+              ...range,
+              sourceKind: "official",
+            })
+          : null,
+        effectiveRouterId
+          ? getMyUsageSummary(effectiveRouterId, {
+              ...range,
+              sourceKind: "estimated",
+            })
+          : null,
+        getMyDailyUsage(31, effectiveRouterId, {
+          ...range,
+          sourceKind: "official",
+        }),
+        getMyDailyUsage(31, effectiveRouterId, {
+          ...range,
+          sourceKind: "estimated",
+        }),
+        getMyUsageRecords(PAGE_SIZE, effectiveRouterId, {
+          offset,
+          ...range,
+          sourceKind,
+        }),
+        getMyDeviceUsageList(50, effectiveRouterId, range),
       ]);
 
-      setData({ summary, dailyUsage, records, deviceUsage, routers, subscriptions });
+      const officialTotals = normalizeUsageSummary(officialSummary);
+      const dailyUsage = officialTotals.record_count > 0
+        ? officialDailyUsage
+        : estimatedDailyUsage;
+
+      setData({
+        officialSummary,
+        estimatedSummary,
+        dailyUsage,
+        records,
+        deviceUsage,
+        routers,
+        subscriptions,
+      });
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -295,7 +339,14 @@ export function UsageScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [selectedRouterId, setSelectedRouterId]);
+  }, [
+    monthOffset,
+    recordPage,
+    selectedRouterId,
+    setSelectedRouterId,
+    usageFilter,
+  ]);
+
   useFocusEffect(
     useCallback(() => {
       void loadUsage();
@@ -339,10 +390,6 @@ export function UsageScreen() {
     }
   }, [data?.routers, selectedRouterId, setSelectedRouterId]);
 
-  const selectedRouterIdLabel = selectedRouter
-    ? `${getRouterDisplayName(selectedRouter)} · ${selectedRouter.id.slice(0, 8)}`
-    : "No router selected";
-
   const selectedSubscription = useMemo(() => {
     if (!selectedRouter?.user_subscription_id) {
       return null;
@@ -359,13 +406,20 @@ export function UsageScreen() {
     ? toNumber(selectedSubscription.plan.data_limit_gb)
     : null;
 
-  const records = selectedRouter
-    ? (data?.records ?? []).filter((record) => record.router_id === selectedRouter.id)
-    : data?.records ?? [];
-  const selectedRouterTotals = useMemo(
-    () => normalizeUsageSummary(data?.summary) ?? summarizeRecordsWithoutDoubleCounting(records),
-    [data?.summary, records]
+  const officialTotals = useMemo(
+    () => normalizeUsageSummary(data?.officialSummary),
+    [data?.officialSummary]
   );
+
+  const estimatedTotals = useMemo(
+    () => normalizeUsageSummary(data?.estimatedSummary),
+    [data?.estimatedSummary]
+  );
+
+  const planTotals =
+    officialTotals.record_count > 0 ? officialTotals : estimatedTotals;
+  const dailySourceLabel =
+    officialTotals.record_count > 0 ? "Official" : "Estimated";
 
   const selectedDeviceUsage = useMemo(() => {
     const list = selectedRouter
@@ -387,96 +441,23 @@ export function UsageScreen() {
   );
 
   const dailyUsageRows = useMemo(() => {
-    const backendRows = data?.dailyUsage ?? [];
-
-    if (backendRows.length) {
-      return [...backendRows].sort((left, right) =>
-        right.usage_date.localeCompare(left.usage_date)
-      );
-    }
-
-    const officialRecords = records.filter(
-      (record) => getUsageSourceKind(record) === "official"
+    return [...(data?.dailyUsage ?? [])].sort((left, right) =>
+      right.usage_date.localeCompare(left.usage_date)
     );
-    const recordsForDailyFallback = officialRecords.length ? officialRecords : records;
-    const grouped = new Map<string, MyDailyUsage>();
-
-    for (const record of recordsForDailyFallback) {
-      const usageDate = record.record_start.slice(0, 10);
-      const existing = grouped.get(usageDate);
-
-      if (!existing) {
-        grouped.set(usageDate, {
-          usage_date: usageDate,
-          totals: {
-            upload_mb: toNumber(record.upload_mb),
-            download_mb: toNumber(record.download_mb),
-            total_mb: toNumber(record.total_mb),
-            record_count: 1,
-            first_record_start: record.record_start,
-            last_record_end: record.record_end,
-          },
-        });
-        continue;
-      }
-
-      existing.totals.upload_mb =
-        toNumber(existing.totals.upload_mb) + toNumber(record.upload_mb);
-      existing.totals.download_mb =
-        toNumber(existing.totals.download_mb) + toNumber(record.download_mb);
-      existing.totals.total_mb =
-        toNumber(existing.totals.total_mb) + toNumber(record.total_mb);
-      existing.totals.record_count += 1;
-    }
-
-    return [...grouped.values()]
-      .sort((left, right) => right.usage_date.localeCompare(left.usage_date))
-      .slice(0, 7);
-  }, [data?.dailyUsage, records]);
+  }, [data?.dailyUsage]);
 
   const maxDailyUsageMb = dailyUsageRows.reduce(
     (max, day) => Math.max(max, toNumber(day.totals.total_mb)),
     0
   );
 
-
-  const officialRecords = records.filter(
-    (record) => getUsageRecordKind(record) === "official"
-  );
-  const estimatedRecords = records.filter(
-    (record) => getUsageRecordKind(record) === "estimated"
-  );
-
-  const filteredRecords = records.filter((record) => {
-    if (usageFilter === "all") {
-      return true;
-    }
-
-    return getUsageRecordKind(record) === usageFilter;
-  });
-
-  const filteredTotalMb = filteredRecords.reduce(
-    (total, record) => total + toNumber(record.total_mb),
-    0
-  );
-
-  const visibleFilteredRecords = filteredRecords.slice(0, recordLimit);
-  const hasMoreRecords = filteredRecords.length > visibleFilteredRecords.length;
-
+  const records = data?.records ?? [];
+  const hasPreviousPage = recordPage > 1;
+  const hasNextPage = records.length === PAGE_SIZE;
 
   useEffect(() => {
-    setRecordLimit(5);
-  }, [selectedRouterId, usageFilter]);
-
-  function getFilterCount(filter: UsageFilter) {
-    if (filter === "all") {
-      return records.length;
-    }
-
-    return filter === "official"
-      ? officialRecords.length
-      : estimatedRecords.length;
-  }
+    setRecordPage(1);
+  }, [selectedRouterId, usageFilter, monthOffset]);
 
   if (isLoading && !data) {
     return (
@@ -507,7 +488,7 @@ export function UsageScreen() {
       <Text style={[styles.eyebrow, { color: colors.primary }]}>Usage</Text>
       <Text style={[styles.title, { color: colors.text }]}>Usage history</Text>
       <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-        Track usage for the currently selected router/service line.
+        Track monthly usage for the selected router/service line.
       </Text>
 
       {errorMessage ? (
@@ -564,6 +545,46 @@ export function UsageScreen() {
         </Text>
       </View>
 
+      <View style={styles.monthRow}>
+        <Pressable
+          style={[
+            styles.monthButton,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+          onPress={() => setMonthOffset((current) => current + 1)}
+        >
+          <Text style={[styles.monthButtonText, { color: colors.primary }]}>
+            Previous month
+          </Text>
+        </Pressable>
+
+        <View style={styles.monthTitleWrap}>
+          <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+            Month
+          </Text>
+          <Text style={[styles.monthTitle, { color: colors.text }]}>
+            {formatMonthTitle(monthOffset)}
+          </Text>
+        </View>
+
+        <Pressable
+          disabled={monthOffset === 0}
+          style={[
+            styles.monthButton,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              opacity: monthOffset === 0 ? 0.45 : 1,
+            },
+          ]}
+          onPress={() => setMonthOffset((current) => Math.max(current - 1, 0))}
+        >
+          <Text style={[styles.monthButtonText, { color: colors.primary }]}>
+            Next month
+          </Text>
+        </Pressable>
+      </View>
+
       <View
         style={[
           styles.infoCard,
@@ -577,10 +598,9 @@ export function UsageScreen() {
           Usage source guide
         </Text>
         <Text style={[styles.infoText, { color: colors.textMuted }]}>
-          Official usage is the service-line total used against the
-          package limit. Estimated usage is the router/CPE per-device breakdown
-          and may be approximate. Use Official for plan-limit explanation and
-          Estimated for device-level demo explanation.
+          Official usage is the service-line total used against the package
+          limit. Estimated usage is the router/CPE per-device breakdown and may
+          be approximate.
         </Text>
       </View>
 
@@ -591,15 +611,15 @@ export function UsageScreen() {
         ]}
       >
         <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-          Selected Router Usage Summary
+          Package Usage Summary
         </Text>
         <CircularUsageGraph
-          usedMb={selectedRouterTotals.total_mb}
+          usedMb={planTotals.total_mb}
           limitGb={selectedPlanLimitGb}
         />
 
         <Text style={[styles.bigNumber, { color: colors.text }]}>
-          {formatMb(selectedRouterTotals.total_mb)}
+          {formatMb(planTotals.total_mb)}
         </Text>
 
         <Text style={[styles.cardText, { color: colors.textMuted }]}>
@@ -607,6 +627,67 @@ export function UsageScreen() {
             ? `Used from ${selectedPlanLimitGb} GB package`
             : "No package limit available"}
         </Text>
+
+        <View style={styles.metricRow}>
+          <View
+            style={[
+              styles.metricBox,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+              Official total
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {formatMb(officialTotals.total_mb)}
+            </Text>
+            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
+              Plan-limit source
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.metricBox,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>
+              Estimated total
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {formatMb(estimatedTotals.total_mb)}
+            </Text>
+            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
+              Device estimate
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+          If official rows exist, PulseFi uses official usage for package-limit
+          explanation. Estimated totals stay visible for device-level debugging.
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.recordHeader}>
+          <View style={styles.deviceUsageTitleGroup}>
+            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
+              {breakdownMode === "download"
+                ? "Download by device"
+                : "Upload by device"}
+            </Text>
+            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+              Estimated router/CPE device totals for {formatMonthTitle(monthOffset)}.
+            </Text>
+          </View>
+        </View>
 
         <View style={styles.metricRow}>
           <Pressable
@@ -635,12 +716,6 @@ export function UsageScreen() {
               ]}
             >
               Download
-            </Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>
-              {formatMb(selectedRouterTotals.download_mb)}
-            </Text>
-            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
-              Tap for devices
             </Text>
           </Pressable>
 
@@ -671,39 +746,7 @@ export function UsageScreen() {
             >
               Upload
             </Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>
-              {formatMb(selectedRouterTotals.upload_mb)}
-            </Text>
-            <Text style={[styles.metricHint, { color: colors.textSubtle }]}>
-              Tap for devices
-            </Text>
           </Pressable>
-        </View>
-
-        <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Summary records: {selectedRouterTotals.record_count} · Latest loaded:{" "}
-          {records.length}
-        </Text>
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <View style={styles.recordHeader}>
-          <View style={styles.deviceUsageTitleGroup}>
-            <Text style={[styles.cardLabel, { color: colors.textMuted }]}>
-              {breakdownMode === "download"
-                ? "Download by device"
-                : "Upload by device"}
-            </Text>
-            <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-              Estimated router/CPE device totals. These may not exactly match
-              official subscription totals. Refreshes every 30 seconds while open.
-            </Text>
-          </View>
         </View>
 
         {selectedDeviceUsage.length ? (
@@ -761,11 +804,10 @@ export function UsageScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No per-device usage is available for this router yet.
+            No per-device usage is available for this router in this month.
           </Text>
         )}
       </View>
-
 
       <View
         style={[
@@ -777,7 +819,7 @@ export function UsageScreen() {
           Daily Usage
         </Text>
         <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-          Last 7 days for the selected router.
+          {dailySourceLabel} daily totals for {formatMonthTitle(monthOffset)}.
         </Text>
 
         {dailyUsageRows.length ? (
@@ -835,7 +877,7 @@ export function UsageScreen() {
           })
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No daily usage is available for this router yet.
+            No daily usage is available for this month.
           </Text>
         )}
       </View>
@@ -846,7 +888,7 @@ export function UsageScreen() {
             Record Filters
           </Text>
           <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-            Showing {filteredRecords.length} records · {formatMb(filteredTotalMb)}
+            Page {recordPage} · {formatMonthTitle(monthOffset)}
           </Text>
         </View>
       </View>
@@ -878,7 +920,7 @@ export function UsageScreen() {
                   },
                 ]}
               >
-                {option.label} ({getFilterCount(option.key)})
+                {option.label}
               </Text>
             </Pressable>
           );
@@ -895,95 +937,141 @@ export function UsageScreen() {
           Latest Records
         </Text>
 
-        {filteredRecords.length ? (
+        {records.length ? (
           <>
-            {visibleFilteredRecords.map((record) => {
-            const kind = getUsageRecordKind(record);
+            {records.map((record) => {
+              const kind = getUsageRecordKind(record);
 
-            return (
-              <View
-                key={record.id}
+              return (
+                <View
+                  key={record.id}
+                  style={[
+                    styles.recordRow,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.recordHeader}>
+                    <Text style={[styles.recordTitle, { color: colors.text }]}>
+                      {formatMb(record.total_mb)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.recordBadge,
+                        {
+                          backgroundColor:
+                            kind === "official"
+                              ? colors.successBackground
+                              : colors.surface,
+                          borderColor:
+                            kind === "official"
+                              ? colors.successBorder
+                              : colors.border,
+                          color:
+                            kind === "official"
+                              ? colors.successText
+                              : colors.primary,
+                        },
+                      ]}
+                    >
+                      {kind === "official" ? "Official" : "Estimated"}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.recordKind, { color: colors.text }]}>
+                    {getUsageKindLabel(kind)}
+                  </Text>
+
+                  <Text style={[styles.cardText, { color: colors.textMuted }]}>
+                    Download: {formatMb(record.download_mb)} · Upload:{" "}
+                    {formatMb(record.upload_mb)}
+                  </Text>
+
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                    Source: {formatSource(record.source)}
+                  </Text>
+
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                    {getUsageKindHelp(kind)}
+                  </Text>
+
+                  <Text style={[styles.smallText, { color: colors.textSubtle }]}>
+                    {formatDateTime(record.record_start)} to{" "}
+                    {formatDateTime(record.record_end)}
+                  </Text>
+                </View>
+              );
+            })}
+
+            <View style={styles.pageRow}>
+              <Pressable
+                disabled={!hasPreviousPage}
                 style={[
-                  styles.recordRow,
+                  styles.pageButton,
                   {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: colors.border,
+                    opacity: hasPreviousPage ? 1 : 0.45,
                   },
                 ]}
+                onPress={() => setRecordPage((current) => Math.max(current - 1, 1))}
               >
-                <View style={styles.recordHeader}>
-                  <Text style={[styles.recordTitle, { color: colors.text }]}>
-                    {formatMb(record.total_mb)}
-                  </Text>
+                <Text style={[styles.pageButtonText, { color: colors.primary }]}>
+                  Previous
+                </Text>
+              </Pressable>
+
+              {Array.from({ length: QUICK_PAGE_COUNT }, (_, index) => index + 1).map((page) => (
+                <Pressable
+                  key={page}
+                  style={[
+                    styles.pageNumberButton,
+                    {
+                      backgroundColor:
+                        page === recordPage
+                          ? primaryActionBackground
+                          : colors.surfaceMuted,
+                      borderColor: page === recordPage ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => setRecordPage(page)}
+                >
                   <Text
                     style={[
-                      styles.recordBadge,
+                      styles.pageButtonText,
                       {
-                        backgroundColor:
-                          kind === "official"
-                            ? colors.successBackground
-                            : colors.surface,
-                        borderColor:
-                          kind === "official"
-                            ? colors.successBorder
-                            : colors.border,
-                        color:
-                          kind === "official"
-                            ? colors.successText
-                            : colors.primary,
+                        color: page === recordPage ? primaryActionText : colors.textMuted,
                       },
                     ]}
                   >
-                    {kind === "official" ? "Official" : "Estimated"}
+                    {page}
                   </Text>
-                </View>
+                </Pressable>
+              ))}
 
-                <Text style={[styles.recordKind, { color: colors.text }]}>
-                  {getUsageKindLabel(kind)}
-                </Text>
-
-                <Text style={[styles.cardText, { color: colors.textMuted }]}>
-                  Download: {formatMb(record.download_mb)} · Upload:{" "}
-                  {formatMb(record.upload_mb)}
-                </Text>
-
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  Source: {formatSource(record.source)}
-                </Text>
-
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  {getUsageKindHelp(kind)}
-                </Text>
-
-                <Text style={[styles.smallText, { color: colors.textSubtle }]}>
-                  {formatDateTime(record.record_start)} to{" "}
-                  {formatDateTime(record.record_end)}
-                </Text>
-              </View>
-            );
-          })}
-
-            {hasMoreRecords ? (
               <Pressable
+                disabled={!hasNextPage}
                 style={[
-                  styles.loadMoreButton,
+                  styles.pageButton,
                   {
                     backgroundColor: colors.surfaceMuted,
                     borderColor: colors.border,
+                    opacity: hasNextPage ? 1 : 0.45,
                   },
                 ]}
-                onPress={() => setRecordLimit((current) => current + 5)}
+                onPress={() => setRecordPage((current) => current + 1)}
               >
-                <Text style={[styles.loadMoreText, { color: colors.primary }]}>
-                  Show 5 more records
+                <Text style={[styles.pageButtonText, { color: colors.primary }]}>
+                  Next
                 </Text>
               </Pressable>
-            ) : null}
+            </View>
           </>
         ) : (
           <Text style={[styles.mutedText, { color: colors.textSubtle }]}>
-            No records match this filter. Pull to refresh or run simulator
-            ingestion from the ISP Admin dashboard.
+            No records match this filter for this month.
           </Text>
         )}
       </View>
@@ -1204,18 +1292,6 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 999,
   },
-  loadMoreButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: "center",
-    marginTop: 12,
-  },
-  loadMoreText: {
-    fontSize: 13,
-    fontWeight: "900",
-  },
   recordRow: {
     borderWidth: 1,
     borderRadius: 18,
@@ -1283,5 +1359,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7888",
     textAlign: "center",
+  },
+  monthRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  monthTitleWrap: {
+    flex: 1,
+    alignItems: "center",
+    gap: 2,
+  },
+  monthTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  monthButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  monthButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  pageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  pageButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  pageNumberButton: {
+    borderWidth: 1,
+    borderRadius: 999,
+    minWidth: 42,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pageButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
   },
 });

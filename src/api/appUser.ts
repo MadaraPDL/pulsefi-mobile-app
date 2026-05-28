@@ -139,9 +139,23 @@ export function getMyRouterCapabilities(routerId: string) {
   return apiRequest<MyRouterCapabilities>(`/me/routers/${routerId}/capabilities`);
 }
 
-export function getMyDeviceUsageList(limit = 50, routerId?: string | null) {
+export function getMyDeviceUsageList(
+  limit = 50,
+  routerId?: string | null,
+  options: {
+    offset?: number;
+    startAt?: string | null;
+    endAt?: string | null;
+  } = {}
+) {
   return apiRequest<MyDeviceUsage[]>(
-    `/me/usage/devices${buildQuery({ limit, router_id: routerId })}`
+    `/me/usage/devices${buildQuery({
+      limit,
+      offset: options.offset ?? 0,
+      router_id: routerId,
+      start_at: options.startAt,
+      end_at: options.endAt,
+    })}`
   );
 }
 
