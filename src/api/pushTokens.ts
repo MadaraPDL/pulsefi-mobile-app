@@ -1,4 +1,4 @@
-﻿import { apiRequest } from "./client";
+import { apiRequest } from "./client";
 
 export type PushTokenRegisterPayload = {
   expo_push_token: string;
@@ -23,7 +23,7 @@ export type PushTokenResponse = {
 export async function registerPushToken(
   payload: PushTokenRegisterPayload
 ): Promise<PushTokenResponse> {
-  return apiRequest<PushTokenResponse>("/app-user/me/push-tokens", {
+  return apiRequest<PushTokenResponse>("/me/push-tokens", {
     method: "POST",
     body: JSON.stringify(payload),
   });
