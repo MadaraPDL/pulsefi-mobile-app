@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
 
 import { registerPushToken } from "../api/pushTokens";
 
@@ -148,14 +148,14 @@ export async function registerForPulseFiPushNotifications() {
     }
 
     if (finalStatus !== "granted") {
-      Alert.alert("PulseFi Push Debug", `Permission not granted: ${finalStatus}`); console.log("PulseFi notifications permission not granted:", finalStatus);
+      console.log("PulseFi notifications permission not granted:", finalStatus);
       return;
     }
 
     const projectId = getExpoProjectId();
 
     if (!projectId) {
-      Alert.alert("PulseFi Push Debug", "Missing EAS project ID."); console.log("PulseFi notifications skipped: missing EAS project ID.");
+      console.log("PulseFi notifications skipped: missing EAS project ID.");
       return;
     }
 
@@ -163,7 +163,7 @@ export async function registerForPulseFiPushNotifications() {
     const expoPushToken = tokenResult.data;
 
     if (!expoPushToken) {
-      Alert.alert("PulseFi Push Debug", "No Expo push token returned."); console.log("PulseFi notifications skipped: no Expo push token returned.");
+      console.log("PulseFi notifications skipped: no Expo push token returned.");
       return;
     }
 
@@ -174,8 +174,8 @@ export async function registerForPulseFiPushNotifications() {
       permission_status: finalStatus,
     });
 
-    hasRegisteredThisSession = true; Alert.alert("PulseFi Push Debug", "Push token registered successfully.");
+    hasRegisteredThisSession = true;
   } catch (error) {
-    Alert.alert("PulseFi Push Debug", `Registration failed: ${String(error)}`); console.log("PulseFi push registration failed:", error);
+    console.log("PulseFi push registration failed:", error);
   }
 }
