@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -411,13 +413,20 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
   }
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={[
-        styles.container,
-        { backgroundColor: colors.background },
-      ]}
-      refreshControl={
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoidingView}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+    >
+      <ScrollView
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={[
+          styles.container,
+          { backgroundColor: colors.background },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
           tintColor={colors.primary}
@@ -728,7 +737,8 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
           onPageChange={setRequestsPage}
         />
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -736,6 +746,10 @@ export default ManualPlanChangeRequestScreen;
 
 function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
   return StyleSheet.create({
+    keyboardAvoidingView: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
     centered: {
       flex: 1,
       alignItems: "center",
@@ -748,6 +762,7 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       flexGrow: 1,
       gap: 16,
       padding: 20,
+      paddingBottom: 160,
       backgroundColor: colors.background,
     },
     eyebrow: {
