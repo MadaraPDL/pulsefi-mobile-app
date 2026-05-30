@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import * as Notifications from "expo-notifications";
 import {
   ActivityIndicator,
+  AppState,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -139,8 +142,39 @@ export function AlertsScreen() {
       setIsRefreshing(false);
     }
   }, [selectedRouterId, setSelectedRouterId]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadAlerts();
+    }, [loadAlerts])
+  );
+
   useEffect(() => {
-    void loadAlerts();
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void loadAlerts(true);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [loadAlerts]);
+
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const data = notification.request.content.data;
+
+        if (
+          data?.screen === "Alerts" ||
+          data?.type === "high_usage" ||
+          data?.type === "plan_exceed" ||
+          data?.type === "new_device_connected"
+        ) {
+          void loadAlerts(true);
+        }
+      }
+    );
+
+    return () => subscription.remove();
   }, [loadAlerts]);
 
   const selectedRouter = useMemo(() => {
