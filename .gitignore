@@ -43,7 +43,6 @@ yarn-error.*
 .env
 
 # Firebase app config and private local credentials
-google-services.json
 firebase-service-account*.json
 *firebase-adminsdk*.json
 service-account*.json
