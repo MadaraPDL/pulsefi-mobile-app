@@ -1,7 +1,4 @@
-export type RootStackParamList = {
-  Login: undefined;
-  App: undefined;
-};
+﻿import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type PulseFiAssistantTargetType = "prediction" | "recommendation";
 
@@ -19,4 +16,9 @@ export type AppTabParamList = {
         assistantTargetId?: string;
       }
     | undefined;
+};
+
+export type RootStackParamList = {
+  Login: undefined;
+  App: NavigatorScreenParams<AppTabParamList> | undefined;
 };

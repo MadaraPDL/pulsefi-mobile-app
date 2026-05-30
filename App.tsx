@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { getCurrentAccount } from "./src/api/auth";
 import { clearSession, getSession, saveSession } from "./src/auth/session";
-import { registerForPulseFiPushNotifications } from "./src/notifications/pushNotifications";
+import {
+  addPulseFiNotificationResponseListener,
+  getLastPulseFiNotificationResponseTarget,
+  registerForPulseFiPushNotifications,
+  type PulseFiPushNavigationTarget,
+} from "./src/notifications/pushNotifications";
 import { AppTabs } from "./src/navigation/AppTabs";
 import type { RootStackParamList } from "./src/navigation/types";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -15,6 +20,19 @@ import { PulseFiThemeProvider, usePulseFiTheme } from "./src/theme/ThemeProvider
 import type { AppUserSession, CurrentAccount } from "./src/types/appUser";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function buildRootAppRouteParams(target: PulseFiPushNavigationTarget) {
+  if (target.screen === "More") {
+    return {
+      screen: "More" as const,
+      params: target.params,
+    };
+  }
+
+  return {
+    screen: target.screen,
+  };
+}
 
 function mergeSessionWithCurrentAccount(
   session: AppUserSession,
@@ -33,6 +51,8 @@ function mergeSessionWithCurrentAccount(
 
 function PulseFiAppShell() {
   const { colors, mode, navigationTheme } = usePulseFiTheme();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const pendingNotificationTargetRef = useRef<PulseFiPushNavigationTarget | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [session, setSession] = useState<AppUserSession | null>(null);
 
@@ -76,6 +96,48 @@ function PulseFiAppShell() {
     void restoreSession();
   }, []);
 
+  function navigateToPushTarget(target: PulseFiPushNavigationTarget) {
+    if (!session || !navigationRef.isReady()) {
+      pendingNotificationTargetRef.current = target;
+      return;
+    }
+
+    navigationRef.navigate("App", buildRootAppRouteParams(target));
+  }
+
+  function flushPendingNotificationTarget() {
+    const target = pendingNotificationTargetRef.current;
+
+    if (!target || !session || !navigationRef.isReady()) {
+      return;
+    }
+
+    pendingNotificationTargetRef.current = null;
+    navigationRef.navigate("App", buildRootAppRouteParams(target));
+  }
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    const subscription = addPulseFiNotificationResponseListener(
+      navigateToPushTarget
+    );
+
+    void getLastPulseFiNotificationResponseTarget().then((target) => {
+      if (target) {
+        navigateToPushTarget(target);
+      }
+    });
+
+    flushPendingNotificationTarget();
+
+    return () => {
+      subscription.remove();
+    };
+  }, [session]);
+
   async function handleLogout() {
     await clearSession();
     setSession(null);
@@ -101,7 +163,11 @@ function PulseFiAppShell() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer theme={navigationTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navigationTheme}
+        onReady={flushPendingNotificationTarget}
+      >
         <StatusBar style={mode === "dark" ? "light" : "dark"} />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {session ? (

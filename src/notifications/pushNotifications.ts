@@ -12,6 +12,19 @@ type ExpoConstantsWithEas = typeof Constants & {
 
 type PushPermissionStatus = "granted" | "denied" | "undetermined" | "unknown";
 
+type PulseFiNotificationData = Record<string, unknown>;
+
+export type PulseFiPushNavigationTarget =
+  | {
+      screen: "Alerts";
+    }
+  | {
+      screen: "More";
+      params: {
+        section: "insights" | "planRequest";
+      };
+    };
+
 let hasRegisteredThisSession = false;
 
 Notifications.setNotificationHandler({
@@ -60,6 +73,62 @@ async function ensureAndroidNotificationChannel() {
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#00D1FF",
   });
+}
+
+export function getPulseFiNotificationNavigationTarget(
+  data: PulseFiNotificationData | null | undefined
+): PulseFiPushNavigationTarget | null {
+  if (!data) {
+    return null;
+  }
+
+  if (data.screen === "Alerts") {
+    return {
+      screen: "Alerts",
+    };
+  }
+
+  if (data.screen === "More" && data.section === "insights") {
+    return {
+      screen: "More",
+      params: {
+        section: "insights",
+      },
+    };
+  }
+
+  if (data.screen === "More" && data.section === "planRequest") {
+    return {
+      screen: "More",
+      params: {
+        section: "planRequest",
+      },
+    };
+  }
+
+  return null;
+}
+
+export function addPulseFiNotificationResponseListener(
+  onTarget: (target: PulseFiPushNavigationTarget) => void
+) {
+  return Notifications.addNotificationResponseReceivedListener((response) => {
+    const target = getPulseFiNotificationNavigationTarget(
+      response.notification.request.content.data
+    );
+
+    if (target) {
+      onTarget(target);
+    }
+  });
+}
+
+export async function getLastPulseFiNotificationResponseTarget() {
+  const response = await Notifications.getLastNotificationResponseAsync();
+
+  return getPulseFiNotificationNavigationTarget(
+    response?.notification.request.content.data
+  );
 }
 
 export async function registerForPulseFiPushNotifications() {
