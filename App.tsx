@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 
 import { getCurrentAccount } from "./src/api/auth";
 import { clearSession, getSession, saveSession } from "./src/auth/session";
+import { registerForPulseFiPushNotifications } from "./src/notifications/pushNotifications";
 import { AppTabs } from "./src/navigation/AppTabs";
 import type { RootStackParamList } from "./src/navigation/types";
 import { LoginScreen } from "./src/screens/LoginScreen";
@@ -63,6 +64,7 @@ function PulseFiAppShell() {
 
         await saveSession(refreshedSession);
         setSession(refreshedSession);
+        void registerForPulseFiPushNotifications();
       } catch {
         await clearSession();
         setSession(null);
@@ -108,7 +110,14 @@ function PulseFiAppShell() {
             </Stack.Screen>
           ) : (
             <Stack.Screen name="Login">
-              {() => <LoginScreen onLoginSuccess={setSession} />}
+              {() => (
+                <LoginScreen
+                  onLoginSuccess={(nextSession) => {
+                    setSession(nextSession);
+                    void registerForPulseFiPushNotifications();
+                  }}
+                />
+              )}
             </Stack.Screen>
           )}
         </Stack.Navigator>
