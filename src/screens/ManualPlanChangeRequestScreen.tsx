@@ -725,6 +725,13 @@ export function ManualPlanChangeRequestScreen({ selectedRouterId, onSelectedRout
               {request.reason ? (
                 <Text style={styles.cardText}>{request.reason}</Text>
               ) : null}
+
+              {request.admin_response ? (
+                <View style={styles.adminResponseBox}>
+                  <Text style={styles.adminResponseTitle}>ISP Admin note</Text>
+                  <Text style={styles.cardText}>{request.admin_response}</Text>
+                </View>
+              ) : null}
             </View>
           ))
         ) : (
@@ -978,6 +985,19 @@ function createStyles(colors: ReturnType<typeof usePulseFiTheme>["colors"]) {
       backgroundColor: colors.surfaceMuted,
       borderWidth: 1,
       borderColor: colors.border,
+    },
+    adminResponseBox: {
+      borderRadius: 14,
+      padding: 12,
+      gap: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    adminResponseTitle: {
+      color: colors.text,
+      fontWeight: "900",
+      fontSize: 14,
     },
     smallText: {
       fontSize: 12,
